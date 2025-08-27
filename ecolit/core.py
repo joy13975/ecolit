@@ -7,6 +7,7 @@ from typing import Any
 from pychonet import ECHONETAPIClient as api
 from pychonet import EchonetInstance, HomeSolarPower, StorageBattery
 from pychonet.lib.udpserver import UDPServer
+from epc_constants import CommonEPC, SolarEPC, BatteryEPC, EPC_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -99,51 +100,28 @@ class EcoliteManager:
                         if instance in instances[eojgc][eojcc]:
                             found = True
                             logger.info(f"✅ Required device validated: {device_name}")
-                            
+
                             # Log available properties for debugging with meaningful names
                             if ip in self.api_client._state and "instances" in self.api_client._state[ip]:
                                 inst_state = self.api_client._state[ip]["instances"][eojgc][eojcc][instance]
                                 available_props = list(inst_state.keys())
-                                
-                                # Map EPC codes to meaningful names
-                                epc_names = {
-                                    # Common properties
-                                    0x80: "Operation status", 0x81: "Installation location", 0x82: "Standard version info",
-                                    0x83: "ID number", 0x84: "Instantaneous power", 0x85: "Cumulative power",
-                                    0x88: "Fault status", 0x8A: "Manufacturer code", 0x8B: "Business facility code",
-                                    0x8C: "Product code", 0x8D: "Production number", 0x8E: "Production date",
-                                    0x8F: "Power saving operation", 0x93: "Remote control", 0x97: "Current time",
-                                    0x98: "Current date", 0x99: "Power limit", 0x9A: "Cumulative runtime",
-                                    0x9D: "Status notification property map", 0x9E: "Set property map", 0x9F: "Get property map",
-                                    
-                                    # Solar specific
-                                    0xC0: "Power factor", 0xE0: "Instantaneous power generation", 0xE1: "Cumulative power generation",
-                                    0xE2: "Instantaneous current", 0xE3: "Cumulative current", 0xE4: "Instantaneous voltage",
-                                    
-                                    # Battery specific  
-                                    0xBA: "Battery remaining capacity", 0xC5: "Working operation status",
-                                    0xD3: "Charging/discharging amount", 0xDA: "Operation mode", 0xE2: "Remaining stored electricity",
-                                    0xE3: "Charging power", 0xE4: "Discharging power", 0xE5: "Remaining capacity percentage",
-                                    
-                                    # Smart meter specific
-                                    0xE7: "Measured instantaneous power", 0xE8: "Measured cumulative power consumption (normal)",
-                                    0xEA: "Measured cumulative power generation (reverse)",
-                                }
-                                
+
+                                # Use centralized EPC name mapping
+
                                 prop_names = []
                                 for p in available_props:
                                     if isinstance(p, int):
-                                        name = epc_names.get(p, f"Unknown(0x{p:02X})")
+                                        name = EPC_NAMES.get(p, f"Unknown(0x{p:02X})")
                                         prop_names.append(name)
-                                
+
                                 logger.debug(f"Available properties for {device_name}: {prop_names}")
-                            
+
                             # Store the raw ECHONET instance for direct access
                             # The instances are already in api_client._state
                             if device_config.get("type") == "solar" and eojcc == 0x79:
                                 self.solar_instance = {
                                     "ip": ip,
-                                    "eojgc": eojgc, 
+                                    "eojgc": eojgc,
                                     "eojcc": eojcc,
                                     "instance": instance
                                 }
@@ -203,7 +181,7 @@ class EcoliteManager:
         # Check if we have required devices configured
         required_devices = self.config.get("devices", {}).get("required", [])
         scan_ranges = self.config.get("network", {}).get("scan_ranges", [])
-        
+
         # If we have required devices but no scan ranges, skip ongoing discovery
         if required_devices and not scan_ranges:
             logger.info("Required devices configured - skipping network discovery")
@@ -239,8 +217,10 @@ class EcoliteManager:
                             continue
 
                         try:
+                            discovery_config = self.config.get("network", {}).get("discovery", {})
+                            device_timeout = discovery_config.get("device_timeout", 0.4)
                             success = await asyncio.wait_for(
-                                self.api_client.discover(ip), timeout=0.3
+                                self.api_client.discover(ip), timeout=device_timeout
                             )
 
                             if success and self.api_client.devices:
@@ -324,8 +304,8 @@ class EcoliteManager:
                 self.devices[device_id]["get_properties"] = get_props or []
 
                 # Get operation status if available
-                if 0x80 in get_props:
-                    status = await instance.getMessage(0x80)
+                if CommonEPC.OPERATION_STATUS in get_props:
+                    status = await instance.getMessage(CommonEPC.OPERATION_STATUS)
                     self.devices[device_id]["properties"]["status"] = (
                         "ON" if status == 0x30 else "OFF"
                     )
@@ -348,7 +328,7 @@ class EcoliteManager:
             battery_soc = None
             battery_power = None
             battery_mode = None
-            
+
             # Poll Solar device
             if self.solar_instance:
                 logger.debug("Polling solar device...")
@@ -357,24 +337,24 @@ class EcoliteManager:
                     eojgc = self.solar_instance["eojgc"]
                     eojcc = self.solar_instance["eojcc"]
                     inst = self.solar_instance["instance"]
-                    
+
                     # First, get the property maps to see what's available
                     try:
                         solar_device = HomeSolarPower(host=ip, api_connector=self.api_client, instance=inst)
-                        
+
                         # Read property maps to populate available properties
                         await asyncio.wait_for(solar_device.getAllPropertyMaps(), timeout=5.0)
-                        
+
                         # Check what properties are now available
                         if ip in self.api_client._state and "instances" in self.api_client._state[ip]:
                             inst_state = self.api_client._state[ip]["instances"][eojgc][eojcc][inst]
                             available_props = [p for p in inst_state.keys() if isinstance(p, int)]
                             logger.debug(f"☀️ Solar properties after map read: {[f'0x{p:02X}' for p in available_props]}")
-                            
-                            # Read the GET property map (0x9F) to see what properties are supported
-                            if 0x9F in available_props:
+
+                            # Read the GET property map to see what properties are supported
+                            if CommonEPC.GET_PROPERTY_MAP in available_props:
                                 try:
-                                    get_map = await asyncio.wait_for(solar_device.update(0x9F), timeout=3.0)
+                                    get_map = await asyncio.wait_for(solar_device.update(CommonEPC.GET_PROPERTY_MAP), timeout=3.0)
                                     if get_map is not None:
                                         logger.debug(f"☀️ Solar GET property map (0x9F): {get_map}")
                                         # The property map should be a list of supported EPC codes
@@ -382,37 +362,37 @@ class EcoliteManager:
                                             logger.debug(f"☀️ Solar supported properties: {[f'0x{p:02X}' for p in get_map if isinstance(p, int)]}")
                                 except Exception as e:
                                     logger.debug(f"Failed to read solar property map: {e}")
-                            
-                            # Read instantaneous power (0xE0) - confirmed supported
-                            if 0xE0 in [0xE0, 0x84]:  # Check if supported in property map
+
+                            # Read instantaneous power - confirmed supported
+                            if SolarEPC.INSTANTANEOUS_POWER_GENERATION in [SolarEPC.INSTANTANEOUS_POWER_GENERATION, CommonEPC.INSTANTANEOUS_POWER]:  # Check if supported in property map
                                 try:
-                                    power_val = await asyncio.wait_for(solar_device.update(0xE0), timeout=3.0)
+                                    power_val = await asyncio.wait_for(solar_device.update(SolarEPC.INSTANTANEOUS_POWER_GENERATION), timeout=3.0)
                                     if power_val is not None:
                                         solar_power = power_val
                                         logger.debug(f"Solar power reading successful: {power_val}W")
                                 except Exception as e:
-                                    logger.debug(f"Failed to read solar power (0xE0): {e}")
+                                    logger.debug(f"Failed to read solar power ({hex(SolarEPC.INSTANTANEOUS_POWER_GENERATION)}): {e}")
                                     # Try alternative EPC
                                     try:
-                                        power_val = await asyncio.wait_for(solar_device.update(0x84), timeout=3.0)
+                                        power_val = await asyncio.wait_for(solar_device.update(CommonEPC.INSTANTANEOUS_POWER), timeout=3.0)
                                         if power_val is not None:
                                             solar_power = power_val
                                     except:
                                         pass
-                        
+
                         # Check for real-time grid power flow (found through solar device!)
                         try:
-                            # 0xE5: Real-time grid power flow (+ import, - export)
-                            grid_flow_val = await asyncio.wait_for(solar_device.update(0xE5), timeout=3.0)
+                            # Real-time grid power flow (+ import, - export)
+                            grid_flow_val = await asyncio.wait_for(solar_device.update(SolarEPC.GRID_POWER_FLOW), timeout=3.0)
                             if grid_flow_val is not None:
                                 grid_power_flow = grid_flow_val
                                 logger.debug(f"Grid power flow reading successful: {grid_flow_val}W")
                         except:
                             pass
-                            
+
                         try:
-                            # 0xE1: Cumulative grid import (for reference)
-                            import_total = await asyncio.wait_for(solar_device.update(0xE1), timeout=3.0)
+                            # Cumulative grid import (for reference)
+                            import_total = await asyncio.wait_for(solar_device.update(SolarEPC.CUMULATIVE_POWER_GENERATION), timeout=3.0)
                             if import_total is not None:
                                 grid_cumulative_import = import_total
                                 # Convert large values to kWh for readability
@@ -422,19 +402,19 @@ class EcoliteManager:
                                     logger.debug(f"📊 Total grid import: {import_total}Wh")
                         except:
                             pass
-                        
-                        
+
+
                     except Exception as wrapper_error:
                         logger.error(f"Wrapper class failed: {wrapper_error}, trying raw API...")
                         import traceback
                         logger.debug(f"Solar wrapper traceback: {traceback.format_exc()}")
-                        
+
                         # Fallback to raw API
                         status_resp = await asyncio.wait_for(
-                            self.api_client.echonetMessage(ip, eojgc, eojcc, inst, 0x62, [{"EPC": 0x80}]),
+                            self.api_client.echonetMessage(ip, eojgc, eojcc, inst, 0x62, [{"EPC": CommonEPC.OPERATION_STATUS}]),
                             timeout=2.0
                         )
-                        if status_resp and 0x80 in status_resp:
+                        if status_resp and CommonEPC.OPERATION_STATUS in status_resp:
                             logger.info(f"☀️ Solar: Status property available")
                         else:
                             logger.info(f"☀️ Solar: No response to status query")
@@ -442,7 +422,7 @@ class EcoliteManager:
                     logger.error(f"Timeout reading solar data")
                 except Exception as e:
                     logger.error(f"Error reading solar data: {e}")
-            
+
             # Poll Battery device
             if self.battery_instance:
                 logger.debug("Polling battery device...")
@@ -451,24 +431,24 @@ class EcoliteManager:
                     eojgc = self.battery_instance["eojgc"]
                     eojcc = self.battery_instance["eojcc"]
                     inst = self.battery_instance["instance"]
-                    
+
                     # First, get the property maps to see what's available
                     try:
                         battery_device = StorageBattery(host=ip, api_connector=self.api_client, instance=inst)
-                        
+
                         # Read property maps to populate available properties
                         await asyncio.wait_for(battery_device.getAllPropertyMaps(), timeout=5.0)
-                        
+
                         # Check what properties are now available
                         if ip in self.api_client._state and "instances" in self.api_client._state[ip]:
                             inst_state = self.api_client._state[ip]["instances"][eojgc][eojcc][inst]
                             available_props = [p for p in inst_state.keys() if isinstance(p, int)]
                             logger.debug(f"🔋 Battery properties after map read: {[f'0x{p:02X}' for p in available_props]}")
-                            
-                            # Read the GET property map (0x9F) to see what properties are supported
-                            if 0x9F in available_props:
+
+                            # Read the GET property map to see what properties are supported
+                            if CommonEPC.GET_PROPERTY_MAP in available_props:
                                 try:
-                                    get_map = await asyncio.wait_for(battery_device.update(0x9F), timeout=3.0)
+                                    get_map = await asyncio.wait_for(battery_device.update(CommonEPC.GET_PROPERTY_MAP), timeout=3.0)
                                     if get_map is not None:
                                         logger.debug(f"🔋 Battery GET property map (0x9F): {get_map}")
                                         # The property map should be a list of supported EPC codes
@@ -476,18 +456,18 @@ class EcoliteManager:
                                             logger.debug(f"🔋 Battery supported properties: {[f'0x{p:02X}' for p in get_map if isinstance(p, int)]}")
                                 except Exception as e:
                                     logger.debug(f"Failed to read battery property map: {e}")
-                            
+
                             # Read the essential battery metrics for EV charging optimization
                             technical_soc = None
                             display_soc = None
-                            
+
                             # Read SOC - prioritize display SOC, fall back to technical
                             soc_candidates = [
-                                (0xBF, "display"),    # User display SOC (preferred)
-                                (0xC9, "display"),    # Alternative user display SOC
-                                (0xE2, "technical"),  # Technical SOC (fallback)
+                                (BatteryEPC.USER_DISPLAY_SOC, "display"),    # User display SOC (preferred)
+                                (BatteryEPC.DISPLAY_SOC_ALT, "display"),     # Alternative user display SOC
+                                (BatteryEPC.REMAINING_STORED_ELECTRICITY, "technical"),  # Technical SOC (fallback)
                             ]
-                            
+
                             for epc, soc_type in soc_candidates:
                                 try:
                                     soc_val = await asyncio.wait_for(battery_device.update(epc), timeout=2.0)
@@ -497,18 +477,18 @@ class EcoliteManager:
                                             soc_percentage = soc_val / 100
                                         else:
                                             soc_percentage = soc_val
-                                        
+
                                         logger.debug(f"Battery {soc_type} SOC (0x{epc:02X}): {soc_percentage:.1f}%")
-                                        
+
                                         if soc_type == "display":
                                             display_soc = soc_percentage
                                             break  # Prefer display SOC, stop searching
                                         elif soc_type == "technical" and display_soc is None:
                                             technical_soc = soc_percentage
-                                            
+
                                 except Exception as e:
                                     logger.debug(f"Failed to read {soc_type} SOC (0x{epc:02X}): {e}")
-                                    
+
                             # Set the SOC value to use
                             if display_soc is not None:
                                 battery_soc = display_soc
@@ -518,10 +498,10 @@ class EcoliteManager:
                                 if not self._technical_soc_warning_shown:
                                     logger.warning(f"⚠️  Using technical SOC - display SOC unavailable via ECHONET")
                                     self._technical_soc_warning_shown = True
-                            
-                            # Read operation mode (0xDA) - confirmed supported
+
+                            # Read operation mode - confirmed supported
                             try:
-                                mode_val = await asyncio.wait_for(battery_device.update(0xDA), timeout=3.0)
+                                mode_val = await asyncio.wait_for(battery_device.update(BatteryEPC.OPERATION_MODE), timeout=3.0)
                                 if mode_val is not None:
                                     # Handle both numeric and string mode values
                                     if isinstance(mode_val, str):
@@ -531,13 +511,13 @@ class EcoliteManager:
                                     logger.debug(f"Battery mode reading successful: {mode_val} -> {battery_mode}")
                             except Exception as e:
                                 logger.debug(f"Failed to read battery mode (0xDA): {e}")
-                                
+
                             # Read critical battery power metrics for EV charging decisions
                             primary_power = None
-                            
-                            # 0xD3: Charging/discharging amount (main power flow: + charging, - discharging)
+
+                            # Charging/discharging amount (main power flow: + charging, - discharging)
                             try:
-                                power_val = await asyncio.wait_for(battery_device.update(0xD3), timeout=3.0)
+                                power_val = await asyncio.wait_for(battery_device.update(BatteryEPC.CHARGING_DISCHARGING_AMOUNT), timeout=3.0)
                                 if power_val is not None:
                                     primary_power = power_val
                                     battery_power = power_val  # Store for essential metrics
@@ -545,10 +525,10 @@ class EcoliteManager:
                             except:
                                 # Try alternative power readings
                                 try:
-                                    # 0xE3: Instantaneous charging power 
-                                    charge_val = await asyncio.wait_for(battery_device.update(0xE3), timeout=3.0)
-                                    discharge_val = await asyncio.wait_for(battery_device.update(0xE4), timeout=3.0)
-                                    
+                                    # Instantaneous charging power
+                                    charge_val = await asyncio.wait_for(battery_device.update(BatteryEPC.CHARGING_POWER), timeout=3.0)
+                                    discharge_val = await asyncio.wait_for(battery_device.update(BatteryEPC.DISCHARGING_POWER), timeout=3.0)
+
                                     if charge_val and charge_val > 0:
                                         battery_power = charge_val
                                     elif discharge_val and discharge_val > 0:
@@ -557,28 +537,28 @@ class EcoliteManager:
                                         battery_power = 0
                                 except:
                                     battery_power = 0
-                                    
+
                             logger.debug(f"Battery data collected: SOC={battery_soc}, Mode={battery_mode}, Power={battery_power}W")
-                        
+
                     except Exception as wrapper_error:
                         logger.debug(f"Battery wrapper failed: {wrapper_error}")
                 except asyncio.TimeoutError:
                     logger.error(f"Timeout reading battery data")
                 except Exception as e:
                     logger.error(f"Error reading battery data: {e}")
-                    
+
             # Note: Solar surplus calculation removed to avoid confusion with grid export
             # EV charging algorithm will calculate surplus based on real-time measurements
-                
+
             # Log essential stats for EV charging optimization in one consolidated line
             if battery_soc is not None or solar_power is not None or grid_power_flow is not None:
                 essential_stats = []
-                
+
                 # Battery SOC - most critical metric
                 if battery_soc is not None:
                     essential_stats.append(f"Battery SOC: {battery_soc:.1f}%")
-                    
-                # Battery power flow (+ charging, - discharging) 
+
+                # Battery power flow (+ charging, - discharging)
                 if battery_power is not None:
                     if battery_power > 0:
                         essential_stats.append(f"Battery: +{battery_power}W (charging)")
@@ -586,7 +566,7 @@ class EcoliteManager:
                         essential_stats.append(f"Battery: {battery_power}W (discharging)")
                     else:
                         essential_stats.append(f"Battery: 0W (idle)")
-                        
+
                 # Grid power flow (+ import, - export)
                 if grid_power_flow is not None:
                     if grid_power_flow > 0:
@@ -595,16 +575,16 @@ class EcoliteManager:
                         essential_stats.append(f"Grid: {grid_power_flow}W (exporting)")
                     else:
                         essential_stats.append(f"Grid: 0W (balanced)")
-                        
+
                 # Solar production
                 if solar_power is not None:
                     essential_stats.append(f"Solar: {solar_power}W")
-                
-                # Log the consolidated essential stats 
+
+                # Log the consolidated essential stats
                 logger.info("⚡ EV CHARGE METRICS: " + " | ".join(essential_stats))
             else:
                 logger.warning("⚠️  No essential metrics available for EV charging optimization")
-                
+
         except Exception as e:
             logger.error(f"Error in polling loop: {e}")
 
