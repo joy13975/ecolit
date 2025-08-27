@@ -42,6 +42,10 @@ class MetricsLogger:
         self.csv_headers = [
             "timestamp",
             "battery_soc_percent",
+            "battery_soc_realtime_percent",
+            "battery_soc_confidence",
+            "battery_soc_source",
+            "battery_charging_rate_pct_per_hour",
             "battery_power_w",
             "grid_power_flow_w",
             "solar_power_w",
@@ -66,6 +70,10 @@ class MetricsLogger:
     def log_metrics(
         self,
         battery_soc: float | None = None,
+        battery_soc_realtime: float | None = None,
+        battery_soc_confidence: float | None = None,
+        battery_soc_source: str | None = None,
+        battery_charging_rate_pct_per_hour: float | None = None,
         battery_power: float | None = None,
         grid_power_flow: float | None = None,
         solar_power: float | None = None,
@@ -82,6 +90,10 @@ class MetricsLogger:
             row = {
                 "timestamp": datetime.now().isoformat(),
                 "battery_soc_percent": battery_soc,
+                "battery_soc_realtime_percent": battery_soc_realtime,
+                "battery_soc_confidence": battery_soc_confidence,
+                "battery_soc_source": battery_soc_source,
+                "battery_charging_rate_pct_per_hour": battery_charging_rate_pct_per_hour,
                 "battery_power_w": battery_power,
                 "grid_power_flow_w": grid_power_flow,
                 "solar_power_w": solar_power,

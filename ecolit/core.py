@@ -143,6 +143,8 @@ class EcoliteManager:
                             "eojgc": eojgc,
                             "eojcc": eojcc,
                             "instance": instance,
+                            "name": device_name,
+                            "capacity_kwh": device_config.get("capacity_kwh"),
                         }
                         logger.info(f"Stored battery device info for {device_name}")
                 elif self.device_state_manager.is_device_discovered(ip):
@@ -356,8 +358,19 @@ class EcoliteManager:
             # Poll Battery device using reusable poller
             if self.battery_poller:
                 battery_data = await self.battery_poller.poll_battery_data()
-                battery_soc = battery_data.get("battery_soc")
+                official_soc = battery_data.get("battery_soc")  # Official SoC reading
                 battery_power = battery_data.get("battery_power")
+                
+                # Use real-time SoC estimate if available and confident
+                realtime_soc = battery_data.get("realtime_soc")
+                soc_confidence = battery_data.get("soc_confidence", 0.0)
+                soc_source = battery_data.get("soc_source", "unknown")
+                
+                # Use real-time estimate if confidence > 0.6, otherwise use official
+                if realtime_soc is not None and soc_confidence > 0.6:
+                    battery_soc = realtime_soc
+                else:
+                    battery_soc = official_soc
 
             # EV Charging Control - Calculate optimal charging amps based on policy
             ev_amps = 0
@@ -377,49 +390,72 @@ class EcoliteManager:
             if battery_soc is not None or solar_power is not None or grid_power_flow is not None:
                 essential_stats = []
 
-                # Battery SOC - most critical metric
+                # Battery SOC - ALWAYS show both official and real-time
                 if battery_soc is not None:
-                    essential_stats.append(f"Battery SOC: {battery_soc:.1f}%")
+                    if realtime_soc is not None and battery_data:
+                        # Show both official and real-time SoC values
+                        soc_display = f"HomeSOC:{official_soc:.1f}%|RT:{realtime_soc:.2f}%"
+                        
+                        # Add charging rate if available
+                        charging_info = battery_data.get("charging_rate_pct_per_hour", 0)
+                        if abs(charging_info) > 0.1:
+                            soc_display += f"({charging_info:+.1f}%/h)"
+                    else:
+                        # Fallback to single SoC value
+                        soc_display = f"HomeSOC:{battery_soc:.1f}%"
+                    
+                    essential_stats.append(soc_display)
 
                 # Battery power flow (+ charging, - discharging)
                 if battery_power is not None:
                     if battery_power > 0:
-                        essential_stats.append(f"Battery: +{battery_power}W (charging)")
+                        essential_stats.append(f"Bat:+{battery_power}W")
                     elif battery_power < 0:
-                        essential_stats.append(f"Battery: {battery_power}W (discharging)")
+                        essential_stats.append(f"Bat:{battery_power}W")
                     else:
-                        essential_stats.append("Battery: 0W (idle)")
+                        essential_stats.append("Bat:0W")
 
                 # Grid power flow (+ import, - export)
                 if grid_power_flow is not None:
                     if grid_power_flow > 0:
-                        essential_stats.append(f"Grid: +{grid_power_flow}W (importing)")
+                        essential_stats.append(f"Grid:+{grid_power_flow}W")
                     elif grid_power_flow < 0:
-                        essential_stats.append(f"Grid: {grid_power_flow}W (exporting)")
+                        essential_stats.append(f"Grid:{grid_power_flow}W")
                     else:
-                        essential_stats.append("Grid: 0W (balanced)")
+                        essential_stats.append("Grid:0W")
 
                 # Solar production
                 if solar_power is not None:
-                    essential_stats.append(f"Solar: {solar_power}W")
+                    essential_stats.append(f"Solar:{solar_power}W")
 
                 # EV charging status
                 if self.ev_controller.is_enabled():
                     policy_name = self.ev_controller.get_current_policy()
-                    essential_stats.append(f"EV: {ev_amps}A ({policy_name})")
+                    essential_stats.append(f"EV:{ev_amps}A({policy_name})")
 
                 # Log the consolidated essential stats
-                logger.info("⚡ EV CHARGE METRICS: " + " | ".join(essential_stats))
+                logger.info("⚡ " + " ".join(essential_stats))
 
                 # Log metrics to CSV file
                 if self.ev_controller.is_enabled():
+                    # Get real-time SoC data for logging
+                    realtime_soc_data = {}
+                    if battery_data:
+                        realtime_soc_data = {
+                            "battery_soc_realtime": battery_data.get("realtime_soc"),
+                            "battery_soc_confidence": battery_data.get("soc_confidence"),
+                            "battery_soc_source": battery_data.get("soc_source"),
+                            "battery_charging_rate_pct_per_hour": battery_data.get("charging_rate_pct_per_hour"),
+                        }
+                    
                     self.metrics_logger.log_metrics(
-                        battery_soc=battery_soc,
+                        battery_soc=official_soc,  # Log official SoC separately
                         battery_power=battery_power,
                         grid_power_flow=grid_power_flow,
                         solar_power=solar_power,
                         ev_charging_amps=ev_amps,
                         ev_policy=policy_name,
+                        **realtime_soc_data,  # Include real-time SoC data
                     )
             else:
                 logger.warning("⚠️  No essential metrics available for EV charging optimization")
