@@ -71,6 +71,7 @@ class TeslaAPIClient:
         self.token_expires_at = None
         self.websocket = None
         self.telemetry_task = None
+        self.token_refresh_task = None
         self.vehicle_data = TeslaVehicleData()
         self.command_timestamps = []  # Rate limiting
 
@@ -124,6 +125,10 @@ class TeslaAPIClient:
         # Authenticate and get access token
         await self._authenticate()
 
+        # Start automatic token refresh task
+        self.token_refresh_task = asyncio.create_task(self._token_refresh_loop())
+        logger.info("Tesla automatic token refresh started")
+
         # Only start telemetry if explicitly enabled and configured
         enable_telemetry = self.config.get("enable_telemetry", False)
         if enable_telemetry and self.telemetry_endpoint and self.vehicle_id:
@@ -138,6 +143,14 @@ class TeslaAPIClient:
         """Close the Tesla API client and cleanup resources."""
         if not self.enabled:
             return
+
+        # Stop token refresh task
+        if self.token_refresh_task:
+            self.token_refresh_task.cancel()
+            try:
+                await self.token_refresh_task
+            except asyncio.CancelledError:
+                pass
 
         # Stop telemetry task
         if self.telemetry_task:
@@ -163,7 +176,7 @@ class TeslaAPIClient:
             logger.error("Missing Tesla authentication credentials")
             raise ValueError("Tesla authentication credentials required")
 
-        auth_url = "https://auth.tesla.com/oauth2/v3/token"
+        auth_url = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
         auth_data = {
             "grant_type": "refresh_token",
             "refresh_token": self.refresh_token,
@@ -172,13 +185,23 @@ class TeslaAPIClient:
         }
 
         try:
-            async with self.session.post(auth_url, json=auth_data) as response:
+            async with self.session.post(
+                auth_url, 
+                data=auth_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            ) as response:
                 if response.status == 200:
                     data = await response.json()
                     self.access_token = data["access_token"]
                     expires_in = data.get("expires_in", 3600)  # Default 1 hour
                     self.token_expires_at = datetime.now() + timedelta(seconds=expires_in)
-                    logger.info("Tesla authentication successful")
+                    
+                    # Also update refresh token if provided (some auth flows return new refresh tokens)
+                    if "refresh_token" in data:
+                        self.refresh_token = data["refresh_token"]
+                        logger.debug("Refresh token updated")
+                    
+                    logger.info(f"Tesla authentication successful (expires in {expires_in}s)")
                 else:
                     error_text = await response.text()
                     logger.error(f"Tesla authentication failed: {response.status} - {error_text}")
@@ -195,6 +218,45 @@ class TeslaAPIClient:
         ):
             logger.info("Access token expired, refreshing...")
             await self._authenticate()
+
+    async def _token_refresh_loop(self):
+        """Background task to automatically refresh access token before expiry."""
+        while True:
+            try:
+                if self.token_expires_at:
+                    # Calculate time until token expires
+                    now = datetime.now()
+                    time_until_expiry = (self.token_expires_at - now).total_seconds()
+                    
+                    # Refresh 10 minutes before expiry (or 25% of total time, whichever is less)
+                    refresh_buffer = min(600, time_until_expiry * 0.25)  # 10 min or 25% of token life
+                    sleep_time = time_until_expiry - refresh_buffer
+                    
+                    if sleep_time > 0:
+                        logger.debug(f"Tesla token refresh scheduled in {sleep_time:.0f} seconds")
+                        await asyncio.sleep(sleep_time)
+                    
+                    # Refresh the token proactively
+                    logger.info("Proactively refreshing Tesla access token...")
+                    try:
+                        await self._authenticate()
+                        logger.info("Tesla token refreshed successfully")
+                    except Exception as auth_error:
+                        logger.error(f"Failed to refresh Tesla token: {auth_error}")
+                        # Continue the loop to retry later
+                        await asyncio.sleep(300)  # Wait 5 minutes before next attempt
+                        continue
+                else:
+                    # If no expiry time, check every hour
+                    await asyncio.sleep(3600)
+                    
+            except asyncio.CancelledError:
+                logger.info("Tesla token refresh task cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Tesla token refresh error: {e}")
+                # Wait 5 minutes before retrying on error
+                await asyncio.sleep(300)
 
     async def _rate_limit_check(self):
         """Check and enforce API rate limits."""
