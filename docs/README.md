@@ -1,0 +1,42 @@
+# Ecolit Documentation
+
+Tesla charging optimization using ECHONET Lite HEMS data for real-time PV surplus management.
+
+## 📋 Documentation Index
+
+### 🔧 **System Architecture & Setup**
+- [**architecture.md**](architecture.md) - System overview and component relationships
+- [**configuration.md**](configuration.md) - Configuration settings and parameters
+- [**echonet-lite.md**](echonet-lite.md) - ECHONET Lite protocol implementation details
+
+### 📊 **Data Analysis & Insights**
+- [**energy-data-analysis.md**](energy-data-analysis.md) - Complete energy data analysis and methodology
+- [**tesla-charging-analysis.md**](tesla-charging-analysis.md) - Tesla charging patterns and real-time control insights
+- [**charging-optimization.md**](charging-optimization.md) - Optimization algorithm and implementation
+
+## 🎯 **Quick Start Guide**
+
+1. **Understanding the System**: Start with [architecture.md](architecture.md) for system overview
+2. **Data Insights**: Read [energy-data-analysis.md](energy-data-analysis.md) for data-driven learnings
+3. **Tesla Integration**: See [tesla-charging-analysis.md](tesla-charging-analysis.md) for charging patterns
+4. **Implementation**: Use [charging-optimization.md](charging-optimization.md) for algorithm details
+
+## 🔍 **Key Findings Summary**
+
+### **Battery-First Strategy Validation**
+- **8/27 Success**: Battery 69%→100% first, then Tesla charging at higher power
+- **8/25/26 Failure**: Tesla charging competed with battery for solar energy
+- **Result**: End-of-solar battery SOC 80% vs 35-46% with poor timing
+
+### **Tesla Charging Reality**
+- **Actual consumption**: 15.5-17.9 kWh (wall connector verified)
+- **Power modulation**: 1.6kW → 4.1kW progression based on battery state
+- **Timing critical**: Battery SOC when Tesla starts determines success
+
+### **Real-Time Control Opportunity**  
+- **Manual gaps**: 40-minute charging pause when battery reached 100%
+- **Improvement potential**: 2-2.5 kWh additional charging with real-time optimization
+- **Grid independence**: Better evening energy autonomy with optimal timing
+
+---
+*Documentation based on analysis of actual HEMS and Tesla wall connector data, August 25-27, 2025*
