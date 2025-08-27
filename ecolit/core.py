@@ -10,6 +10,7 @@ from pychonet.lib.udpserver import UDPServer
 
 from .charging import EnergyMetrics, EVChargingController
 from .constants import EPC_NAMES, CommonEPC
+from .device_state_manager import DeviceStateManager
 from .devices import BatteryDevicePoller, SolarDevicePoller
 from .metrics_logger import MetricsLogger
 
@@ -40,6 +41,9 @@ class EcoliteManager:
 
         # Initialize metrics logger
         self.metrics_logger = MetricsLogger(config)
+
+        # Initialize device state manager (after api_client is available)
+        self.device_state_manager = None
 
     async def start(self) -> None:
         """Start the ECHONET Lite manager."""
@@ -105,65 +109,47 @@ class EcoliteManager:
                 # Wait for discovery to complete
                 for _ in range(300):
                     await asyncio.sleep(0.01)
-                    if ip in self.api_client._state and "discovered" in self.api_client._state[ip]:
+                    discovery_state = self.device_state_manager.get_discovery_state(ip)
+                    if discovery_state and "discovered" in discovery_state:
                         break
 
-                # Check if the specific device exists
-                if ip in self.api_client._state and "instances" in self.api_client._state[ip]:
-                    instances = self.api_client._state[ip]["instances"]
-                    found = False
+                # Check if the specific device exists using DeviceStateManager
+                if self.device_state_manager.device_exists(ip, eojgc, eojcc, instance):
+                    logger.info(f"✅ Required device validated: {device_name}")
 
-                    if eojgc in instances and eojcc in instances[eojgc]:
-                        if instance in instances[eojgc][eojcc]:
-                            found = True
-                            logger.info(f"✅ Required device validated: {device_name}")
+                    # Log available properties for debugging with meaningful names
+                    available_props = self.device_state_manager.get_available_properties(
+                        ip, eojgc, eojcc, instance
+                    )
+                    prop_names = []
+                    for p in available_props:
+                        name = EPC_NAMES.get(p, f"Unknown(0x{p:02X})")
+                        prop_names.append(name)
 
-                            # Log available properties for debugging with meaningful names
-                            if (
-                                ip in self.api_client._state
-                                and "instances" in self.api_client._state[ip]
-                            ):
-                                inst_state = self.api_client._state[ip]["instances"][eojgc][eojcc][
-                                    instance
-                                ]
-                                available_props = list(inst_state.keys())
+                    logger.debug(f"Available properties for {device_name}: {prop_names}")
 
-                                # Use centralized EPC name mapping
-
-                                prop_names = []
-                                for p in available_props:
-                                    if isinstance(p, int):
-                                        name = EPC_NAMES.get(p, f"Unknown(0x{p:02X})")
-                                        prop_names.append(name)
-
-                                logger.debug(
-                                    f"Available properties for {device_name}: {prop_names}"
-                                )
-
-                            # Store the raw ECHONET instance for direct access
-                            # The instances are already in api_client._state
-                            if device_config.get("type") == "solar" and eojcc == 0x79:
-                                self.solar_instance = {
-                                    "ip": ip,
-                                    "eojgc": eojgc,
-                                    "eojcc": eojcc,
-                                    "instance": instance,
-                                }
-                                logger.info(f"Stored solar device info for {device_name}")
-                            elif device_config.get("type") == "battery" and eojcc == 0x7D:
-                                self.battery_instance = {
-                                    "ip": ip,
-                                    "eojgc": eojgc,
-                                    "eojcc": eojcc,
-                                    "instance": instance,
-                                }
-                                logger.info(f"Stored battery device info for {device_name}")
-
-                    if not found:
-                        logger.error(
-                            f"❌ Required device not found: {device_name} (0x{eojgc:02X}{eojcc:02X}:{instance})"
-                        )
-                        missing_devices.append(device_name)
+                    # Store the raw ECHONET instance for direct access
+                    if device_config.get("type") == "solar" and eojcc == 0x79:
+                        self.solar_instance = {
+                            "ip": ip,
+                            "eojgc": eojgc,
+                            "eojcc": eojcc,
+                            "instance": instance,
+                        }
+                        logger.info(f"Stored solar device info for {device_name}")
+                    elif device_config.get("type") == "battery" and eojcc == 0x7D:
+                        self.battery_instance = {
+                            "ip": ip,
+                            "eojgc": eojgc,
+                            "eojcc": eojcc,
+                            "instance": instance,
+                        }
+                        logger.info(f"Stored battery device info for {device_name}")
+                elif self.device_state_manager.is_device_discovered(ip):
+                    logger.error(
+                        f"❌ Required device not found: {device_name} (0x{eojgc:02X}{eojcc:02X}:{instance})"
+                    )
+                    missing_devices.append(device_name)
                 else:
                     logger.error(f"❌ No devices found at {ip} for {device_name}")
                     missing_devices.append(device_name)
@@ -198,6 +184,9 @@ class EcoliteManager:
 
             self.udp_server.run(interface, port, loop=loop)
             self.api_client = api(server=self.udp_server)
+
+            # Initialize device state manager now that api_client is available
+            self.device_state_manager = DeviceStateManager(self.api_client)
 
             logger.info(f"ECHONET Lite API initialized on {interface}:{port}")
         except Exception as e:

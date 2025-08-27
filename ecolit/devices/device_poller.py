@@ -7,6 +7,7 @@ from typing import Any
 from pychonet import HomeSolarPower, StorageBattery
 
 from ..constants import BatteryEPC, CommonEPC, SolarEPC
+from ..device_state_manager import DeviceStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class DevicePollerBase:
         self.eojgc = device_instance["eojgc"]
         self.eojcc = device_instance["eojcc"]
         self.instance = device_instance["instance"]
+        self.device_state_manager = DeviceStateManager(api_client)
 
     async def _safe_property_read(
         self, device, epc_code: int, timeout: float = 3.0, description: str = ""
@@ -80,17 +82,18 @@ class SolarDevicePoller(DevicePollerBase):
             await asyncio.wait_for(solar_device.getAllPropertyMaps(), timeout=5.0)
 
             # Check available properties for debugging
-            if self.ip in self.api_client._state and "instances" in self.api_client._state[self.ip]:
-                inst_state = self.api_client._state[self.ip]["instances"][self.eojgc][self.eojcc][
-                    self.instance
-                ]
-                available_props = [p for p in inst_state.keys() if isinstance(p, int)]
+            available_props = self.device_state_manager.get_available_properties(
+                self.ip, self.eojgc, self.eojcc, self.instance
+            )
+            if available_props:
                 logger.debug(
                     f"☀️ Solar properties available: {[f'0x{p:02X}' for p in available_props]}"
                 )
 
                 # Read the GET property map if available
-                if CommonEPC.GET_PROPERTY_MAP in available_props:
+                if self.device_state_manager.has_property(
+                    self.ip, self.eojgc, self.eojcc, self.instance, CommonEPC.GET_PROPERTY_MAP
+                ):
                     get_map = await self._safe_property_read(
                         solar_device,
                         CommonEPC.GET_PROPERTY_MAP,
@@ -197,17 +200,18 @@ class BatteryDevicePoller(DevicePollerBase):
             await asyncio.wait_for(battery_device.getAllPropertyMaps(), timeout=5.0)
 
             # Check available properties for debugging
-            if self.ip in self.api_client._state and "instances" in self.api_client._state[self.ip]:
-                inst_state = self.api_client._state[self.ip]["instances"][self.eojgc][self.eojcc][
-                    self.instance
-                ]
-                available_props = [p for p in inst_state.keys() if isinstance(p, int)]
+            available_props = self.device_state_manager.get_available_properties(
+                self.ip, self.eojgc, self.eojcc, self.instance
+            )
+            if available_props:
                 logger.debug(
                     f"🔋 Battery properties available: {[f'0x{p:02X}' for p in available_props]}"
                 )
 
                 # Read the GET property map if available
-                if CommonEPC.GET_PROPERTY_MAP in available_props:
+                if self.device_state_manager.has_property(
+                    self.ip, self.eojgc, self.eojcc, self.instance, CommonEPC.GET_PROPERTY_MAP
+                ):
                     get_map = await self._safe_property_read(
                         battery_device,
                         CommonEPC.GET_PROPERTY_MAP,
