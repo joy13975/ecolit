@@ -186,9 +186,6 @@ class BatteryDevicePoller(DevicePollerBase):
             )
 
         self.realtime_soc_estimator = RealtimeSoCEstimator(battery_capacity_kwh)
-        logger.info(
-            f"🔋 Real-time SoC estimator initialized for {device_instance.get('name', 'Battery')} ({battery_capacity_kwh}kWh)"
-        )
 
     async def poll_battery_data(self) -> dict[str, Any | None]:
         """Poll battery device for state and power data.
