@@ -51,8 +51,8 @@ class MetricsLogger:
         ]
 
         try:
-            # Open CSV file and write headers
-            self.csv_file = open(self.csv_file_path, "w", newline="")
+            # Open CSV file with unbuffered mode for immediate writes
+            self.csv_file = open(self.csv_file_path, "w", newline="", buffering=1)
             self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=self.csv_headers)
             self.csv_writer.writeheader()
             self.csv_file.flush()
