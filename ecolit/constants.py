@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """ECHONET Lite Property Code (EPC) constants for cleaner code."""
 
+
 # Common EPC codes used across all device types
 class CommonEPC:
     # Core device properties
@@ -22,7 +23,7 @@ class CommonEPC:
     CURRENT_DATE = 0x98  # Current date setting
     POWER_LIMIT = 0x99  # Power limit setting
     CUMULATIVE_RUNTIME = 0x9A  # Cumulative operating time
-    
+
     # Property maps
     STATUS_CHANGE_PROPERTY_MAP = 0x9D  # Status change announcement property map
     SET_PROPERTY_MAP = 0x9E  # Set property map
@@ -39,11 +40,11 @@ class SolarEPC:
     CUMULATIVE_CURRENT = 0xE3  # Cumulative current generation amount
     INSTANTANEOUS_VOLTAGE = 0xE4  # Instantaneous voltage generation amount
     GRID_POWER_FLOW = 0xE5  # Real-time grid power flow (+ import, - export)
-    
-    # System interconnection properties 
+
+    # System interconnection properties
     SYSTEM_INTERCONNECTED_TYPE = 0xD0  # System-interconnected type
     OUTPUT_POWER_RESTRAINT_STATUS = 0xD1  # Output power restraint status
-    
+
     # Output power control
     OUTPUT_POWER_CONTROL_1 = 0xA0  # Output power control setting 1
     OUTPUT_POWER_CONTROL_2 = 0xA1  # Output power control setting 2
@@ -60,11 +61,11 @@ class BatteryEPC:
     CHARGING_POWER = 0xE3  # Instantaneous charging power
     DISCHARGING_POWER = 0xE4  # Instantaneous discharging power
     REMAINING_CAPACITY_PERCENTAGE = 0xE5  # Remaining stored electricity percentage
-    
+
     # Display SOC (preferred for user interface)
     USER_DISPLAY_SOC = 0xBF  # User display SOC
-    DISPLAY_SOC_ALT = 0xC9   # Alternative display SOC
-    
+    DISPLAY_SOC_ALT = 0xC9  # Alternative display SOC
+
     # Charging/discharging settings
     CHARGING_METHOD = 0xC1  # Charging method
     DISCHARGING_METHOD = 0xC2  # Discharging method
@@ -72,7 +73,7 @@ class BatteryEPC:
     DISCHARGING_CAPACITY = 0xA1  # AC discharging capacity
     CHARGING_CURRENT_CAPACITY = 0xC7  # AC charging current capacity
     DISCHARGING_CURRENT_CAPACITY = 0xC8  # AC discharging current capacity
-    
+
     # Battery specifications
     BATTERY_TYPE = 0xDE  # Battery type
     RATED_CAPACITY = 0xD0  # Rated electricity storage capacity
@@ -81,15 +82,19 @@ class BatteryEPC:
 # Smart Electric Energy Meter specific EPC codes
 class MeterEPC:
     MEASURED_INSTANTANEOUS_POWER = 0xE7  # Measured instantaneous electric energy
-    MEASURED_CUMULATIVE_CONSUMPTION = 0xE8  # Measured cumulative electric energy consumption (normal direction)
-    MEASURED_CUMULATIVE_GENERATION = 0xEA  # Measured cumulative electric energy generation (reverse direction)
+    MEASURED_CUMULATIVE_CONSUMPTION = (
+        0xE8  # Measured cumulative electric energy consumption (normal direction)
+    )
+    MEASURED_CUMULATIVE_GENERATION = (
+        0xEA  # Measured cumulative electric energy generation (reverse direction)
+    )
 
 
 # EPC code to human-readable name mapping
 EPC_NAMES = {
     # Common properties
     0x80: "Operation status",
-    0x81: "Installation location", 
+    0x81: "Installation location",
     0x82: "Standard version info",
     0x83: "ID number",
     0x84: "Instantaneous power",
@@ -109,7 +114,6 @@ EPC_NAMES = {
     0x9D: "Status notification property map",
     0x9E: "Set property map",
     0x9F: "Get property map",
-    
     # Solar specific
     0xC0: "Power factor",
     0xE0: "Instantaneous power generation",
@@ -122,8 +126,7 @@ EPC_NAMES = {
     0xD1: "Output power restraint status",
     0xA0: "Output power control 1",
     0xA1: "Output power control 2",
-    
-    # Battery specific  
+    # Battery specific
     0xBA: "Battery remaining capacity",
     0xC5: "Working operation status",
     0xD3: "Charging/discharging amount",
@@ -135,7 +138,6 @@ EPC_NAMES = {
     0xC7: "Charging current capacity",
     0xC8: "Discharging current capacity",
     0xDE: "Battery type",
-    
     # Smart meter specific
     0xE7: "Measured instantaneous power",
     0xE8: "Measured cumulative power consumption (normal)",

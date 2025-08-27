@@ -171,7 +171,7 @@ class EcoliteManager:
             raise RuntimeError(error_msg)
 
         logger.info("✅ All required devices validated successfully")
-        
+
         # Initialize device pollers once after validation
         if self.solar_instance:
             self.solar_poller = SolarDevicePoller(self.solar_instance, self.api_client)
