@@ -18,11 +18,11 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
                 "timeout": 5,
             },
             "discovery": {
-                "device_timeout": 0.4,      # Timeout per IP during discovery scan
-                "validation_timeout": 10,   # Timeout for required device validation
-                "property_timeout": 3.0,    # Timeout for reading device properties
-                "wait_iterations": 300,     # Max iterations to wait for discovery
-                "wait_interval": 0.01,      # Sleep interval between wait iterations
+                "device_timeout": 0.4,  # Timeout per IP during discovery scan
+                "validation_timeout": 10,  # Timeout for required device validation
+                "property_timeout": 3.0,  # Timeout for reading device properties
+                "wait_iterations": 300,  # Max iterations to wait for discovery
+                "wait_interval": 0.01,  # Sleep interval between wait iterations
             },
         },
         "devices": {

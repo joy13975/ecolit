@@ -245,7 +245,10 @@ class BatteryDevicePoller(DevicePollerBase):
         soc_candidates = [
             (BatteryEPC.USER_DISPLAY_SOC, "display"),  # User display SOC (preferred)
             (BatteryEPC.DISPLAY_SOC_ALT, "display"),  # Alternative user display SOC
-            (BatteryEPC.REMAINING_STORED_ELECTRICITY, "technical"),  # Technical SOC - this is the correct one!
+            (
+                BatteryEPC.REMAINING_STORED_ELECTRICITY,
+                "technical",
+            ),  # Technical SOC - this is the correct one!
         ]
 
         for epc, soc_type in soc_candidates:
@@ -259,7 +262,9 @@ class BatteryDevicePoller(DevicePollerBase):
                     if "/" in soc_val:
                         try:
                             numerator, denominator = map(int, soc_val.split("/"))
-                            soc_percentage = (numerator / denominator) * 100 if denominator > 0 else 0
+                            soc_percentage = (
+                                (numerator / denominator) * 100 if denominator > 0 else 0
+                            )
                             # Skip "0/5000" type values - they're not useful
                             if soc_percentage == 0:
                                 continue

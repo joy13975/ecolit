@@ -8,7 +8,8 @@ from pathlib import Path
 import yaml
 from pychonet import ECHONETAPIClient as api
 from pychonet.lib.udpserver import UDPServer
-from network_utils import get_local_networks, expand_to_full_scan_range
+
+from network_utils import expand_to_full_scan_range, get_local_networks
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -46,7 +47,9 @@ async def discover_devices():
         for i in expand_to_full_scan_range():
             ip = f"{network}.{i}"
             try:
-                success = await asyncio.wait_for(server.discover(ip), timeout=0.4)  # TODO: Use config timeout
+                success = await asyncio.wait_for(
+                    server.discover(ip), timeout=0.4
+                )  # TODO: Use config timeout
                 if success:
                     # Wait for discovery
                     for _ in range(300):

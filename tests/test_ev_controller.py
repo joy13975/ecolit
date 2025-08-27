@@ -1,9 +1,6 @@
 """Test critical EV controller functionality - rate limiting and safety only."""
 
-import time
 from unittest.mock import patch
-
-import pytest
 
 from ecolit.charging.controller import EVChargingController
 from ecolit.charging.policies import EnergyMetrics
@@ -15,22 +12,22 @@ class TestEVControllerCritical:
     def test_rate_limiting_prevents_frequent_changes(self, mock_config, energy_metrics_exporting):
         """Test that rate limiting prevents dangerous frequent charging adjustments."""
         controller = EVChargingController(mock_config)
-        
-        with patch('time.time') as mock_time:
+
+        with patch("time.time") as mock_time:
             mock_time.return_value = 1000.0
-            
+
             # First calculation should work
             amps1 = controller.calculate_charging_amps(energy_metrics_exporting)
             assert amps1 > 0
-            
+
             # Immediate second calculation should be rate limited
             mock_time.return_value = 1010.0  # Only 10 seconds later
             amps2 = controller.calculate_charging_amps(energy_metrics_exporting)
             assert amps2 == amps1  # Same as before due to rate limiting
-            
+
             # After adjustment interval, should calculate new value
             mock_time.return_value = 1040.0  # 40 seconds later (> 30s interval)
-            amps3 = controller.calculate_charging_amps(energy_metrics_exporting)
+            controller.calculate_charging_amps(energy_metrics_exporting)
             # Should potentially be different (not rate limited)
 
     def test_safety_max_amps_limit(self, mock_config):
@@ -42,10 +39,10 @@ class TestEVControllerCritical:
             grid_power_flow=-5000,  # Massive export
             solar_power=8000,
         )
-        
+
         controller = EVChargingController(mock_config)
         amps = controller.calculate_charging_amps(extreme_export)
-        
+
         # Must never exceed configured max_amps
         assert amps <= mock_config["ev_charging"]["max_amps"]
 
@@ -54,14 +51,14 @@ class TestEVControllerCritical:
         # Set conditions that might trigger negative amps
         extreme_import = EnergyMetrics(
             battery_soc=20.0,
-            battery_power=-3000,  # Heavy discharging  
+            battery_power=-3000,  # Heavy discharging
             grid_power_flow=5000,  # Heavy import
             solar_power=0,
         )
-        
+
         controller = EVChargingController(mock_config)
         amps = controller.calculate_charging_amps(extreme_import)
-        
+
         # Must never go below zero
         assert amps >= 0
 
@@ -69,9 +66,9 @@ class TestEVControllerCritical:
         """Test that disabled controller always returns zero amps."""
         config = mock_config.copy()
         config["ev_charging"]["enabled"] = False
-        
+
         controller = EVChargingController(config)
-        
+
         # Even with extreme export conditions, disabled controller returns 0
         extreme_export = EnergyMetrics(
             battery_soc=100.0,
@@ -79,6 +76,6 @@ class TestEVControllerCritical:
             grid_power_flow=-10000,
             solar_power=15000,
         )
-        
+
         amps = controller.calculate_charging_amps(extreme_export)
         assert amps == 0

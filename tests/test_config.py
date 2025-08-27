@@ -1,6 +1,5 @@
 """Test critical configuration validation - only the stuff that prevents bugs."""
 
-import pytest
 from ecolit.config import load_config
 
 
@@ -13,4 +12,3 @@ class TestConfigValidation:
         assert config is not None
         assert "network" in config
         assert "ev_charging" in config
-

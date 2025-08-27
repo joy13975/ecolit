@@ -1,10 +1,10 @@
 """Critical integration tests for device polling - the stuff that actually matters."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ecolit.devices import BatteryDevicePoller, SolarDevicePoller
+from ecolit.devices import BatteryDevicePoller
 
 
 class TestBatterySOCParsing:
@@ -14,12 +14,7 @@ class TestBatterySOCParsing:
     async def test_soc_parsing_real_echonet_scenario(self):
         """Test the EXACT scenario that caused the bug: 0xC9 returns '0/5000' but 0xE2 returns 5358."""
         # Setup device instance and mock API client
-        device_instance = {
-            "ip": "192.168.0.2",
-            "eojgc": 0x02,
-            "eojcc": 0x7D,
-            "instance": 0x1F
-        }
+        device_instance = {"ip": "192.168.0.2", "eojgc": 0x02, "eojcc": 0x7D, "instance": 0x1F}
 
         api_client = MagicMock()
         api_client._state = {}
@@ -57,6 +52,7 @@ class TestBatterySOCParsing:
         battery_device = MagicMock()
         # Simulate timeout on first EPC, success on fallback
         call_count = 0
+
         async def mock_update(epc_code):
             nonlocal call_count
             call_count += 1

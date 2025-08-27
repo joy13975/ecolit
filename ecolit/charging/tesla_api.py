@@ -77,14 +77,14 @@ class TeslaAPIClient:
 
         # Regional Configuration (auto-detected from refresh_token prefix)
         region = config.get("region", "auto")
-        
+
         if region == "auto":
             # Auto-detect from refresh token prefix
             if self.refresh_token and self.refresh_token.startswith("EU_"):
                 self.base_url = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
                 self.detected_region = "eu"
             elif self.refresh_token and self.refresh_token.startswith("AP_"):
-                self.base_url = "https://fleet-api.prd.ap.vn.cloud.tesla.com" 
+                self.base_url = "https://fleet-api.prd.ap.vn.cloud.tesla.com"
                 self.detected_region = "ap"
             else:
                 self.base_url = "https://fleet-api.prd.na.vn.cloud.tesla.com"
@@ -230,10 +230,7 @@ class TeslaAPIClient:
 
         # Connect to WebSocket
         self.websocket = await websockets.connect(
-            self.telemetry_endpoint, 
-            additional_headers=headers, 
-            ping_interval=30, 
-            ping_timeout=10
+            self.telemetry_endpoint, additional_headers=headers, ping_interval=30, ping_timeout=10
         )
 
         # Send subscription message
@@ -288,36 +285,38 @@ class TeslaAPIClient:
     async def get_vehicle_data(self) -> TeslaVehicleData:
         """Get current vehicle data - either from telemetry stream or by polling."""
         # If telemetry is active and recent, use that data
-        if (self.vehicle_data.timestamp and 
-            (datetime.now() - self.vehicle_data.timestamp).total_seconds() < 30):
+        if (
+            self.vehicle_data.timestamp
+            and (datetime.now() - self.vehicle_data.timestamp).total_seconds() < 30
+        ):
             return self.vehicle_data
-            
+
         # Otherwise, poll the vehicle directly
         return await self.poll_vehicle_data()
-        
+
     async def poll_vehicle_data(self) -> TeslaVehicleData:
         """Poll vehicle data directly from Tesla API."""
         if not self.enabled or not self.vehicle_tag:
             return TeslaVehicleData()
-            
+
         try:
             await self._ensure_authenticated()
-            
+
             # Try Fleet API first, fallback to Owner API
             url = f"{self.base_url}/api/1/vehicles/{self.vehicle_tag}/vehicle_data"
             headers = {
                 "Authorization": f"Bearer {self.access_token}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
-            
+
             async with self.session.get(url, headers=headers) as response:
                 if response.status == 200:
                     result = await response.json()
                     vehicle_data = result.get("response", {})
-                    
+
                     # Extract relevant data
                     charge_state = vehicle_data.get("charge_state", {})
-                    
+
                     # Update our data structure
                     new_data = TeslaVehicleData(
                         battery_level=charge_state.get("battery_level"),
@@ -325,22 +324,26 @@ class TeslaAPIClient:
                         charge_amps=charge_state.get("charge_current_request"),
                         charging_state=charge_state.get("charging_state"),
                         charge_port_status=charge_state.get("charge_port_door_open"),
-                        timestamp=datetime.now()
+                        timestamp=datetime.now(),
                     )
-                    
+
                     # Cache the polled data
                     self.vehicle_data = new_data
-                    
-                    logger.debug(f"Tesla polled: SOC={new_data.battery_level}%, "
-                               f"Power={new_data.charging_power}kW, "
-                               f"State={new_data.charging_state}")
-                               
+
+                    logger.debug(
+                        f"Tesla polled: SOC={new_data.battery_level}%, "
+                        f"Power={new_data.charging_power}kW, "
+                        f"State={new_data.charging_state}"
+                    )
+
                     return new_data
-                    
+
                 else:
                     error_text = await response.text()
-                    logger.warning(f"Tesla vehicle polling failed: {response.status} - {error_text}")
-                    
+                    logger.warning(
+                        f"Tesla vehicle polling failed: {response.status} - {error_text}"
+                    )
+
                     if response.status == 412:
                         logger.info("Fleet API not registered - trying Owner API fallback")
                         # Try Owner API as fallback
@@ -349,10 +352,10 @@ class TeslaAPIClient:
                             if owner_response.status == 200:
                                 result = await owner_response.json()
                                 vehicle_data = result.get("response", {})
-                                
-                                # Extract relevant data  
+
+                                # Extract relevant data
                                 charge_state = vehicle_data.get("charge_state", {})
-                                
+
                                 # Update our data structure
                                 new_data = TeslaVehicleData(
                                     battery_level=charge_state.get("battery_level"),
@@ -360,24 +363,26 @@ class TeslaAPIClient:
                                     charge_amps=charge_state.get("charge_current_request"),
                                     charging_state=charge_state.get("charging_state"),
                                     charge_port_status=charge_state.get("charge_port_door_open"),
-                                    timestamp=datetime.now()
+                                    timestamp=datetime.now(),
                                 )
-                                
+
                                 # Cache the polled data
                                 self.vehicle_data = new_data
-                                
-                                logger.info(f"Tesla Owner API: SOC={new_data.battery_level}%, "
-                                          f"Power={new_data.charging_power}kW, "
-                                          f"State={new_data.charging_state}")
-                                          
+
+                                logger.info(
+                                    f"Tesla Owner API: SOC={new_data.battery_level}%, "
+                                    f"Power={new_data.charging_power}kW, "
+                                    f"State={new_data.charging_state}"
+                                )
+
                                 return new_data
                             else:
                                 logger.warning(f"Owner API also failed: {owner_response.status}")
                     elif response.status == 401:
                         logger.info("Tesla authentication may have expired")
-                    
+
                     return TeslaVehicleData()
-                    
+
         except Exception as e:
             logger.error(f"Tesla polling error: {e}")
             return TeslaVehicleData()
