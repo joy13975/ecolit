@@ -33,24 +33,24 @@ Analysis of actual Tesla wall connector data combined with HEMS energy flows to 
 
 ## Charging Strategy Correlation with Battery SOC
 
-### Battery State When Tesla Charging Started
-- **8/25**: Started 07:30, battery SOC = 20% → Poor coordination
-- **8/26**: Started 08:00, battery SOC = 52% → Moderate coordination  
-- **8/27**: Started 08:00, battery SOC = 69% → Better coordination
+### Home Battery State When Tesla Charging Started
+- **8/25**: Started 07:30, Home Battery SOC = 20% → Poor coordination
+- **8/26**: Started 08:00, Home Battery SOC = 52% → Moderate coordination  
+- **8/27**: Started 08:00, Home Battery SOC = 69% → Better coordination
 
-### Power Modulation vs Battery Status
+### Power Modulation vs Home Battery Status
 ```
 8/27 SUCCESS PATTERN:
-Hour  Tesla_kW  Battery_SOC  Coordination
-08h     2.0      69→83%      Low Tesla, battery charging
-09h     2.3      83→100%     Moderate Tesla, battery filling
-10h     1.0      100%        Brief pause (battery full)
-11h     3.3      99%         HIGH Tesla with battery buffer
-12h     2.7      99→93%      Sustained high with battery support
-13h     3.0      93%         Continued aggressive charging
+Hour  Tesla_kW  Home_Battery_SOC  Coordination
+08h     2.0      69→83%           Low Tesla, home battery charging
+09h     2.3      83→100%          Moderate Tesla, home battery filling
+10h     1.0      100%             Brief pause (home battery full)
+11h     3.3      99%              HIGH Tesla with home battery buffer
+12h     2.7      99→93%           Sustained high with home battery support
+13h     3.0      93%              Continued aggressive charging
 ```
 
-**Key Pattern**: Tesla power increased AFTER battery reached 100%, not before.
+**Key Pattern**: Tesla power increased AFTER home battery reached 100%, not before.
 
 ## HEMS vs Tesla Data Validation
 
@@ -112,9 +112,9 @@ Date  Tesla_Actual  HEMS_Consumption_Spikes  Ratio
 ## Power Control Algorithm Insights
 
 ### Validated Thresholds
-- **Start condition**: Battery SOC > 70% (8/27 started at 69% successfully)
-- **Conservative phase**: SOC < 90% → limit Tesla to ~1.6kW
-- **Aggressive phase**: SOC ≥ 90% → allow Tesla up to 4kW
+- **Start condition**: Home Battery SOC > 70% (8/27 started at 69% successfully)
+- **Conservative phase**: Home Battery SOC < 90% → limit Tesla to ~1.6kW
+- **Aggressive phase**: Home Battery SOC ≥ 90% → allow Tesla up to 4kW
 - **Rate limiting**: Max 2A change per adjustment cycle
 
 ### Tesla Charging Current Conversion
@@ -133,7 +133,7 @@ def tesla_power_to_current(power_kw, voltage=200):
 ## Integration Requirements
 
 ### HEMS Data Integration
-- **Real-time access**: Battery SOC (EPC 0xE2), Solar power (EPC 0xE0), Grid flow (EPC 0xE5)
+- **Real-time access**: Home Battery SOC (EPC 0xE2), Solar power (EPC 0xE0), Grid flow (EPC 0xE5)
 - **Update frequency**: 10-second intervals for responsive control
 - **Validation**: Cross-check grid flow for surplus calculations
 
@@ -144,7 +144,7 @@ def tesla_power_to_current(power_kw, voltage=200):
 
 ### Decision Logic Framework
 ```python
-def calculate_tesla_current(battery_soc, solar_w, house_consumption_w, grid_flow_w):
+def calculate_tesla_current(home_battery_soc, solar_w, house_consumption_w, grid_flow_w):
     """
     Real-time Tesla charging current calculation
     Based on validated patterns from actual data
@@ -152,8 +152,8 @@ def calculate_tesla_current(battery_soc, solar_w, house_consumption_w, grid_flow
     # Calculate available surplus
     surplus_w = solar_w - house_consumption_w
     
-    # Battery-aware power limits
-    if battery_soc < 90:
+    # Home battery-aware power limits
+    if home_battery_soc < 90:
         max_tesla_w = min(surplus_w * 0.4, 1600)  # Conservative
     else:
         max_tesla_w = min(surplus_w, 4000)        # Aggressive
@@ -171,14 +171,14 @@ def calculate_tesla_current(battery_soc, solar_w, house_consumption_w, grid_flow
 
 ### Daily Performance Indicators
 - **Tesla energy captured**: Target 16-18 kWh (weather dependent)
-- **End-of-day battery SOC**: Target >80% (vs manual best 80%, failed 35-46%)
+- **End-of-day Home Battery SOC**: Target >80% (vs manual best 80%, failed 35-46%)
 - **Grid dependency**: Target <15% daily consumption
 - **Charging efficiency**: Tesla kWh / available solar surplus ratio
 
 ### Real-Time Validation
 - **No charging gaps**: During solar availability windows (8-16h minimum)
-- **Power progression**: Conservative → aggressive pattern following battery SOC
-- **Grid balance**: Minimize imports, tolerate minor exports for battery health
+- **Power progression**: Conservative → aggressive pattern following Home Battery SOC
+- **Grid balance**: Minimize imports, tolerate minor exports for home battery health
 
 ---
 *Analysis based on actual Tesla wall connector data (5-minute precision) combined with HEMS energy flow patterns, validated against manual control baseline performance*

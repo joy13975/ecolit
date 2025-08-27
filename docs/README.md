@@ -23,18 +23,18 @@ Tesla charging optimization using ECHONET Lite HEMS data for real-time PV surplu
 
 ## 🔍 **Key Findings Summary**
 
-### **Battery-First Strategy Validation**
-- **8/27 Success**: Battery 69%→100% first, then Tesla charging at higher power
-- **8/25/26 Failure**: Tesla charging competed with battery for solar energy
-- **Result**: End-of-solar battery SOC 80% vs 35-46% with poor timing
+### **Home Battery-First Strategy Validation**
+- **8/27 Success**: Home Battery 69%→100% first, then Tesla charging at higher power
+- **8/25/26 Failure**: Tesla charging competed with home battery for solar energy
+- **Result**: End-of-solar Home Battery SOC 80% vs 35-46% with poor timing
 
 ### **Tesla Charging Reality**
 - **Actual consumption**: 15.5-17.9 kWh (wall connector verified)
-- **Power modulation**: 1.6kW → 4.1kW progression based on battery state
-- **Timing critical**: Battery SOC when Tesla starts determines success
+- **Power modulation**: 1.6kW → 4.1kW progression based on home battery state
+- **Timing critical**: Home Battery SOC when Tesla starts determines success
 
 ### **Real-Time Control Opportunity**  
-- **Manual gaps**: 40-minute charging pause when battery reached 100%
+- **Manual gaps**: 40-minute charging pause when home battery reached 100%
 - **Improvement potential**: 2-2.5 kWh additional charging with real-time optimization
 - **Grid independence**: Better evening energy autonomy with optimal timing
 

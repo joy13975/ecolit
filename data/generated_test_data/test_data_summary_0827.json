@@ -1,0 +1,34 @@
+{
+  "date": "2025-08-0827",
+  "total_data_points": 8640,
+  "interval_seconds": 10,
+  "duration_hours": 24.0,
+  "grid_flow_stats": {
+    "min_w": -1325,
+    "max_w": 783,
+    "avg_w": 66.4,
+    "export_periods_gt50w": 1302,
+    "import_periods": 5592,
+    "balanced_periods": 1746,
+    "percent_export_opportunities": 15.1
+  },
+  "home_battery_soc_stats": {
+    "min_percent": 18.6,
+    "max_percent": 100,
+    "avg_percent": 60.9
+  },
+  "ev_charging_implications": {
+    "eco_policy_behavior": {
+      "increase_charging_periods": 1302,
+      "decrease_charging_periods": 5592,
+      "maintain_charging_periods": 1746
+    },
+    "hurry_policy_differences": "Allows charging during imports \u22641000W",
+    "primary_control_metric": "grid_power_flow",
+    "unused_metrics": [
+      "home_battery_soc",
+      "battery_power",
+      "solar_power"
+    ]
+  }
+}
