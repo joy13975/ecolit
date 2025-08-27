@@ -186,21 +186,21 @@ class TeslaAPIClient:
 
         try:
             async with self.session.post(
-                auth_url, 
+                auth_url,
                 data=auth_data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
             ) as response:
                 if response.status == 200:
                     data = await response.json()
                     self.access_token = data["access_token"]
                     expires_in = data.get("expires_in", 3600)  # Default 1 hour
                     self.token_expires_at = datetime.now() + timedelta(seconds=expires_in)
-                    
+
                     # Also update refresh token if provided (some auth flows return new refresh tokens)
                     if "refresh_token" in data:
                         self.refresh_token = data["refresh_token"]
                         logger.debug("Refresh token updated")
-                    
+
                     logger.info(f"Tesla authentication successful (expires in {expires_in}s)")
                 else:
                     error_text = await response.text()
@@ -227,15 +227,17 @@ class TeslaAPIClient:
                     # Calculate time until token expires
                     now = datetime.now()
                     time_until_expiry = (self.token_expires_at - now).total_seconds()
-                    
+
                     # Refresh 10 minutes before expiry (or 25% of total time, whichever is less)
-                    refresh_buffer = min(600, time_until_expiry * 0.25)  # 10 min or 25% of token life
+                    refresh_buffer = min(
+                        600, time_until_expiry * 0.25
+                    )  # 10 min or 25% of token life
                     sleep_time = time_until_expiry - refresh_buffer
-                    
+
                     if sleep_time > 0:
                         logger.debug(f"Tesla token refresh scheduled in {sleep_time:.0f} seconds")
                         await asyncio.sleep(sleep_time)
-                    
+
                     # Refresh the token proactively
                     logger.info("Proactively refreshing Tesla access token...")
                     try:
@@ -249,7 +251,7 @@ class TeslaAPIClient:
                 else:
                     # If no expiry time, check every hour
                     await asyncio.sleep(3600)
-                    
+
             except asyncio.CancelledError:
                 logger.info("Tesla token refresh task cancelled")
                 break
@@ -561,7 +563,7 @@ class TeslaAPIClient:
 
             async with self.session.post(url, headers=headers) as response:
                 result = await response.json()
-                
+
                 if response.status == 200:
                     logger.info("Tesla vehicle wake_up command sent successfully")
                     return True
@@ -617,10 +619,12 @@ class TeslaAPIClient:
                     error_text = await response.text()
                     logger.info(f"Vehicle sleeping: {error_text}")
                     return TeslaVehicleData(), True
-                
+
                 else:
                     error_text = await response.text()
-                    logger.warning(f"Tesla vehicle polling failed: {response.status} - {error_text}")
+                    logger.warning(
+                        f"Tesla vehicle polling failed: {response.status} - {error_text}"
+                    )
                     return TeslaVehicleData(), False
 
         except Exception as e:
