@@ -2,90 +2,38 @@
 
 ## Configuration File
 
-Ecolit uses a JSON configuration file (`config.json`) for runtime settings. The file can be specified via the `ECOLIT_CONFIG` environment variable or defaults to `config.json` in the current directory.
+Ecolit uses a YAML configuration file (`config.yaml`) for runtime settings. 
 
-## Configuration Structure
+**To get started:**
+1. Copy `config.template.yaml` to `config.yaml`
+2. Customize the values for your setup
+3. See the template file for detailed explanations of each setting
 
-```json
-{
-  "polling_interval": 10,
-  "echonet": {
-    "interface": "auto",
-    "port": 3610,
-    "timeout": 10,
-    "retry_count": 3
-  },
-  "tesla": {
-    "enabled": false,
-    "host": "192.168.1.100",
-    "refresh_token": "your_token_here",
-    "min_charging_amps": 5,
-    "max_charging_amps": 32
-  },
-  "modes": {
-    "default": "grid_free",
-    "emergency_charging": false,
-    "solar_only": false,
-    "battery_preserve": false
-  },
-  "thresholds": {
-    "min_battery_soc": 20,
-    "target_battery_soc": 80,
-    "max_grid_power": 0,
-    "solar_buffer": 500,
-    "battery_buffer": 100
-  },
-  "logging": {
-    "level": "INFO",
-    "file": "ecolit.log",
-    "max_size": "10MB",
-    "backup_count": 5
-  }
-}
-```
+## Configuration Reference
 
-## Configuration Parameters
+All configuration options, defaults, and examples are documented in the [`config.template.yaml`](../config.template.yaml) file. This template includes:
 
-### General Settings
+- **Network & device discovery settings**
+- **EV charging policies and parameters**
+- **Tesla integration options**
+- **Logging configuration**
+- **Example configurations for different scenarios**
 
-- **polling_interval**: Seconds between device polls (default: 10)
+## Configuration Categories
 
-### ECHONET Settings
+For detailed parameter descriptions, see the [`config.template.yaml`](../config.template.yaml) file which contains inline documentation for all settings.
 
-- **interface**: Network interface or "auto" for automatic selection
-- **port**: UDP port for ECHONET Lite (default: 3610)
-- **timeout**: Request timeout in seconds
-- **retry_count**: Number of retries for failed requests
+### Current Implementation Settings
+The following configuration sections are actively used by the current implementation:
+- **Network discovery**: Device scanning and ECHONET Lite settings
+- **EV charging policies**: ECO, HURRY, and EMERGENCY policies  
+- **Rate limiting**: Amp adjustment intervals and steps
+- **Logging**: Output levels and file rotation
 
-### Tesla Integration
-
-- **enabled**: Enable/disable Tesla integration
-- **host**: Tesla Wall Connector IP address (for local API)
-- **refresh_token**: Tesla API refresh token
-- **min_charging_amps**: Minimum charging current (typically 5A)
-- **max_charging_amps**: Maximum charging current (based on circuit/vehicle)
-
-### Operating Modes
-
-- **default**: Default operating mode on startup
-- **emergency_charging**: Override all limits for maximum charging
-- **solar_only**: Only charge from solar generation
-- **battery_preserve**: Prevent battery discharge for EV charging
-
-### Thresholds
-
-- **min_battery_soc**: Minimum battery SOC to maintain (%)
-- **target_battery_soc**: Target battery SOC for optimization (%)
-- **max_grid_power**: Maximum allowed grid import (W)
-- **solar_buffer**: Reserve solar power for house loads (W)
-- **battery_buffer**: Reserve battery power margin (W)
-
-### Logging
-
-- **level**: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- **file**: Log file path
-- **max_size**: Maximum log file size before rotation
-- **backup_count**: Number of rotated log files to keep
+### Future Implementation Settings
+The following configuration sections are prepared for future features:
+- **Tesla API integration**: Refresh tokens and vehicle settings
+- **Complex algorithms**: Advanced battery coordination thresholds
 
 ## Operating Modes Explained
 
@@ -113,53 +61,10 @@ Protects home battery from EV charging demands:
 - Maintains battery for home backup
 - Useful during outage-prone periods
 
-## Environment Variables
-
-- `ECOLIT_CONFIG`: Path to configuration file
-- `ECOLIT_LOG_LEVEL`: Override log level
-- `TESLA_REFRESH_TOKEN`: Override Tesla token (security)
-
 ## Example Configurations
 
-### Minimal Solar-Only Setup
-```json
-{
-  "polling_interval": 30,
-  "modes": {
-    "default": "solar_only"
-  },
-  "tesla": {
-    "enabled": true,
-    "refresh_token": "your_token"
-  }
-}
-```
+Multiple example configurations for different use cases are provided in [`config.template.yaml`](../config.template.yaml), including:
 
-### Aggressive Grid-Free with Battery
-```json
-{
-  "modes": {
-    "default": "grid_free"
-  },
-  "thresholds": {
-    "min_battery_soc": 10,
-    "max_grid_power": 100,
-    "solar_buffer": 200
-  }
-}
-```
-
-### Conservative Battery Protection
-```json
-{
-  "modes": {
-    "default": "grid_free",
-    "battery_preserve": true
-  },
-  "thresholds": {
-    "min_battery_soc": 50,
-    "target_battery_soc": 90,
-    "battery_buffer": 500
-  }
-}
-```
+- **Discovery mode**: Automatic device detection
+- **Production mode**: Validated specific devices  
+- **EV charging enabled**: Various policy configurations

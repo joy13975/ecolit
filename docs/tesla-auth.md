@@ -148,6 +148,77 @@ The Tesla API client automatically:
 - Integrates with EV charging optimization policies
 - Provides real-time SOC, charging power, and charging control
 
+### Tesla API Integration Implementation
+
+#### Vehicle Data Access
+```python
+async def get_tesla_data():
+    """Poll Tesla vehicle data for charging optimization"""
+    try:
+        # Get vehicle state
+        vehicle_data = await tesla_api.get_vehicle_data()
+        
+        # Extract charging information
+        charging_state = vehicle_data.get('charge_state', {})
+        
+        return {
+            'battery_level': charging_state.get('battery_level'),  # EV SOC (%)
+            'charging_state': charging_state.get('charging_state'),  # Charging, Stopped, etc.
+            'charge_current_request': charging_state.get('charge_current_request'),  # Current amps
+            'charger_power': charging_state.get('charger_power'),  # Current power (kW)
+            'charge_energy_added': charging_state.get('charge_energy_added')  # Session energy
+        }
+    except Exception as e:
+        logger.error(f"Tesla API error: {e}")
+        return None
+```
+
+#### Charging Current Control
+```python
+async def set_charging_current(target_amps: int):
+    """Set Tesla charging current (6-20A range for typical setups)"""
+    try:
+        # Validate amperage range
+        target_amps = max(6, min(20, target_amps))
+        
+        # Send command to vehicle
+        await tesla_api.charge_set_limit(target_amps)
+        
+        logger.info(f"⚡ Tesla charging current set to {target_amps}A")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to set Tesla current: {e}")
+        return False
+```
+
+#### Rate Limiting & Safety
+```python
+class TeslaController:
+    def __init__(self):
+        self.current_amps = 0
+        self.last_update = 0
+        
+    async def update_charging(self, target_amps: int):
+        """Apply rate limiting to prevent rapid changes"""
+        now = time.time()
+        
+        # Limit to 2A change per 30 seconds
+        if now - self.last_update < 30:
+            max_change = 2
+            if abs(target_amps - self.current_amps) > max_change:
+                target_amps = self.current_amps + (
+                    max_change if target_amps > self.current_amps else -max_change
+                )
+        
+        # Apply the change
+        if target_amps != self.current_amps:
+            success = await set_charging_current(target_amps)
+            if success:
+                self.current_amps = target_amps
+                self.last_update = now
+```
+
 ## Regional Configuration  
 
 ecolit auto-detects your Tesla region from token prefixes:

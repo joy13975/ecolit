@@ -66,23 +66,7 @@ battery.add_listener(on_battery_change)
 ## Typical HEMS Setup
 
 ### Device Topology
-```
-Power Grid ←→ Smart Meter
-    ↓
-Distribution Board ←→ Solar Inverter
-    ↓                     ↓
-Home Loads          Storage Battery
-    ↓
-EV Charger → Tesla
-```
-
-### Data Points for Optimization
-
-1. **Solar Production**: Real-time generation in watts
-2. **Battery State**: SOC percentage, charge/discharge rate
-3. **Grid Flow**: Import/export power, direction
-4. **Home Consumption**: Total household load
-5. **Available Surplus**: Solar - Home Load + Battery discharge
+See [architecture.md](architecture.md#energy-flow-topology) for complete system topology and data flow diagrams.
 
 ## Communication Flow
 

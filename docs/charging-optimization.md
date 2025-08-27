@@ -90,30 +90,7 @@ def power_to_amperage(power_w, voltage=200):
 ```
 
 #### Rate Limiting & Safety (Future Implementation)
-```python
-class EVChargeController:
-    def __init__(self):
-        self.current_amps = 0
-        self.last_update = 0
-        
-    async def update_charging(self, target_amps):
-        """Apply rate limiting to prevent rapid changes"""
-        now = time.time()
-        
-        # Limit to 2A change per 30 seconds
-        if now - self.last_update < 30:
-            max_change = 2
-            if abs(target_amps - self.current_amps) > max_change:
-                target_amps = self.current_amps + (
-                    max_change if target_amps > self.current_amps else -max_change
-                )
-        
-        # Apply the change
-        if target_amps != self.current_amps:
-            await self.set_ev_current(target_amps)
-            self.current_amps = target_amps
-            self.last_update = now
-```
+Rate limiting and safety implementations are detailed in [tesla-auth.md](tesla-auth.md#rate-limiting--safety).
 
 ## Current Implementation (Simple Policies)
 
@@ -142,124 +119,18 @@ def calculate_target_amps(self, current_amps: int, metrics: EnergyMetrics) -> in
 ## Future Implementation Requirements (Theoretical)
 
 ### HEMS Data Integration
-```python
-async def get_hems_data():
-    """Poll critical ECHONET Lite data points"""
-    try:
-        # Real-time energy data
-        solar_power = await solar_device.update(0xE0)     # Instantaneous power (W)
-        home_battery_soc = await battery_device.update(0xE2)   # Home Battery SOC (%) - NOT EV SOC
-        grid_flow = await solar_device.update(0xE5)       # Grid flow (W)
-        
-        # Calculate house consumption estimate
-        house_consumption = estimate_house_load(solar_power, grid_flow, home_battery_soc)
-        solar_surplus = solar_power - house_consumption
-        
-        return {
-            'home_battery_soc': home_battery_soc / 100 if home_battery_soc > 100 else home_battery_soc,
-            'solar_surplus_w': solar_surplus,
-            'grid_flow_w': grid_flow
-        }
-    except Exception as e:
-        logger.error(f"HEMS data error: {e}")
-        return None
-```
+HEMS data structure and integration details are covered in [architecture.md](architecture.md#hems-data-processing-pipeline) and [echonet-lite.md](echonet-lite.md).
 
 ### EV API Integration (Future)
-```python
-async def control_ev_charging():
-    """Main control loop"""
-    hems_data = await get_hems_data()
-    if not hems_data:
-        return
-        
-    # Calculate target charging power
-    target_power = calculate_ev_power(
-        hems_data['home_battery_soc'],
-        hems_data['solar_surplus_w'], 
-        hems_data['grid_flow_w']
-    )
-    
-    target_amps = power_to_amperage(target_power)
-    
-    # Apply rate limiting and update EV
-    await charge_controller.update_charging(target_amps)
-    
-    # Log decision
-    logger.info(
-        f"🔋 Home Battery: {hems_data['home_battery_soc']:.1f}% | "
-        f"☀️ Surplus: {hems_data['solar_surplus_w']}W | "
-        f"🔌 Grid: {hems_data['grid_flow_w']:+d}W | "
-        f"⚡ EV: {target_amps}A ({target_power}W)"
-    )
-```
+Tesla API integration details are covered in [tesla-auth.md](tesla-auth.md). The future complex algorithm would use this integration to implement the theoretical control logic described above.
 
 ## Configuration Parameters
 
 ### Current Configuration (Simple Policies)
-```yaml
-ev_charging:
-  enabled: true
-  policy: "eco"              # eco, hurry, emergency
-  max_amps: 20               # Maximum charging current
-  
-  # ECO policy settings
-  eco:
-    export_threshold: 50     # Minimum grid export (W) before increasing amps
-  
-  # HURRY policy settings  
-  hurry:
-    max_import: 1000        # Maximum grid import allowed (W)
-    
-  # Rate limiting
-  adjustment_interval: 30   # Seconds between amp adjustments
-  measurement_interval: 10  # Seconds between measurements
-```
+Current EV charging configuration options are documented in [`config.template.yaml`](../config.template.yaml) under the `ev_charging` section.
 
 ### Future Configuration (Theoretical Complex Algorithm)
-```yaml
-ev_charging_advanced:
-  # EV specifications
-  max_amperage: 20              # Breaker protection
-  min_amperage: 6               # EV minimum
-  wall_connector_voltage: 200   # Charging voltage
-  
-  # Home battery coordination (theoretical future feature)
-  min_home_battery_soc: 70      # Start charging threshold
-  battery_priority_soc: 90      # Conservative/aggressive boundary
-  # Power management (theoretical - based on 8/27 success analysis)
-  conservative_power: 1600      # Max power when Home Battery SOC < 90% (W)
-  aggressive_power: 4000        # Max power when Home Battery SOC >= 90% (W)
-  
-  # Grid protection
-  max_grid_import: 200          # Stop charging if importing >200W
-  export_boost_enabled: true    # Increase charging if exporting
-  
-  # Rate limiting (safety)
-  max_amp_change: 2             # Max current change per cycle
-  adjustment_interval: 30       # Seconds between adjustments
-  
-  # Operating window
-  earliest_start: "06:00"       # No charging before
-  latest_end: "20:00"          # No charging after
-```
-
-### Monitoring Configuration
-```yaml
-monitoring:
-  poll_interval: 10             # HEMS data polling (seconds)
-  data_timeout: 15              # ECHONET timeout (seconds)
-  log_level: "INFO"            # Logging detail
-  
-dashboard:
-  update_frequency: 5           # Dashboard refresh (seconds)
-  history_retention: 30         # Days of data to keep
-  
-alerts:
-  grid_import_threshold: 500    # Alert if importing >500W (W)
-  battery_low_threshold: 30     # Alert if battery <30% (%)
-  charging_failure_timeout: 300 # Alert if no charging data (seconds)
-```
+Advanced configuration options for future complex algorithms would extend the current configuration structure. These theoretical settings would be added to the template when implemented.
 
 ## Expected Performance
 

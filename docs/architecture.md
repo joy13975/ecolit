@@ -36,6 +36,33 @@ ECHONET Devices → UDP Broadcast → Pychonet Parser →
                   Monitoring/Logging
 ```
 
+## Energy Flow Topology
+
+```
+Power Grid ←→ Smart Meter
+    ↓
+Distribution Board ←→ Solar Inverter
+    ↓                     ↓
+Home Loads          Storage Battery
+    ↓
+EV Charger → Tesla
+```
+
+## HEMS Data Processing Pipeline
+
+### Data Points for Optimization
+
+1. **Solar Production**: Real-time generation in watts
+2. **Home Battery State**: SOC percentage, charge/discharge rate
+3. **Grid Flow**: Import/export power, direction
+4. **Home Consumption**: Total household load
+5. **Available Surplus**: Solar - Home Load + Battery discharge
+
+### Energy Balance Equation
+```
+Solar + Grid Import ≈ Consumption + Grid Export + Battery Net Storage
+```
+
 ## Deployment Scenarios
 
 ### Local Development

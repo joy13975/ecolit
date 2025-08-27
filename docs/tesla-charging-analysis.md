@@ -118,17 +118,11 @@ Date  Tesla_Actual  HEMS_Consumption_Spikes  Ratio
 - **Rate limiting**: Max 2A change per adjustment cycle
 
 ### Tesla Charging Current Conversion
-```python
-# Validated power levels from actual data
-def tesla_power_to_current(power_kw, voltage=200):
-    """
-    8/27 actual power levels:
-    - 1.6kW → 8A (conservative phase)
-    - 4.1kW → 20A (aggressive phase, breaker limit)
-    """
-    target_amps = (power_kw * 1000) / voltage
-    return max(6, min(20, int(target_amps)))
-```
+Power to current conversion validated from actual data:
+- 1.6kW → 8A (conservative phase)  
+- 4.1kW → 20A (aggressive phase, breaker limit)
+
+Tesla API implementation details are covered in [tesla-auth.md](tesla-auth.md).
 
 ## Integration Requirements
 
@@ -143,29 +137,15 @@ def tesla_power_to_current(power_kw, voltage=200):
 - **Safety limits**: Breaker protection, rate limiting, emergency stop
 
 ### Decision Logic Framework
-```python
-def calculate_tesla_current(home_battery_soc, solar_w, house_consumption_w, grid_flow_w):
-    """
-    Real-time Tesla charging current calculation
-    Based on validated patterns from actual data
-    """
-    # Calculate available surplus
-    surplus_w = solar_w - house_consumption_w
-    
-    # Home battery-aware power limits
-    if home_battery_soc < 90:
-        max_tesla_w = min(surplus_w * 0.4, 1600)  # Conservative
-    else:
-        max_tesla_w = min(surplus_w, 4000)        # Aggressive
-    
-    # Grid flow adjustments
-    if grid_flow_w > 200:  # Importing
-        max_tesla_w = 0    # Stop charging
-    elif grid_flow_w < -100:  # Exporting  
-        max_tesla_w += abs(grid_flow_w)  # Use export
-        
-    return tesla_power_to_current(max_tesla_w / 1000)
-```
+The theoretical decision logic framework based on validated patterns:
+
+**Key validated thresholds:**
+- Conservative phase: Home Battery SOC < 90% → limit Tesla power 
+- Aggressive phase: Home Battery SOC ≥ 90% → allow higher Tesla power
+- Grid protection: Stop charging if importing >200W
+- Export utilization: Increase charging if exporting >100W
+
+Implementation details for this theoretical algorithm are covered in [charging-optimization.md](charging-optimization.md).
 
 ## Success Metrics & Validation
 

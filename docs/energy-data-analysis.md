@@ -91,13 +91,9 @@ Hour  0825  0826  0827
 ## Technical Validation
 
 ### Energy Balance Verification
-```
-Solar + Grid Import ≈ Consumption + Grid Export + Battery Net Storage
+Energy balance calculations follow the equation defined in [architecture.md](architecture.md#energy-balance-equation).
 
-Example (0827):
-33.4 + 4.0 ≈ 29.2 + 2.0 + 6.2
-37.4 ≈ 37.4 ✓
-```
+Example validation (0827): 33.4 + 4.0 ≈ 29.2 + 2.0 + 6.2 = 37.4 ✓
 
 ### Temporal Consistency
 - Battery SOC progression follows charge/discharge patterns

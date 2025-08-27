@@ -25,7 +25,7 @@ class ChargingPolicy(ABC):
         """Initialize policy with configuration."""
         self.config = config
         self.max_amps = config.get("max_amps", 20)
-        
+
         # Amp adjustment settings
         amp_adjustments = config.get("amp_adjustments", {})
         self.increase_step = amp_adjustments.get("increase_step", 1)
