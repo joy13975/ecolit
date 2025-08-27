@@ -43,7 +43,6 @@ class RealtimeSoCEstimator:
         self.power_history = []
 
         # Configuration
-        self.decay_rate_per_hour = 0.05  # 5% decay per hour to prevent long-term drift
         self.max_extrapolation_hours = 2.0  # Max time to extrapolate without official update
         self.max_history_hours = 1.0  # Keep power history for trend analysis
 
@@ -109,17 +108,8 @@ class RealtimeSoCEstimator:
                 energy_change_wh = avg_power * time_elapsed_hours
                 self.cumulative_energy_wh += energy_change_wh
 
-                # Apply time-based decay to prevent unbounded drift (only if we haven't had recent official update)
-                if self.official_soc_time is not None:
-                    time_since_official_hours = (
-                        timestamp - self.official_soc_time
-                    ).total_seconds() / 3600
-                    if time_since_official_hours > 0.5:  # Only decay after 30 minutes
-                        decay_factor = 1.0 - (self.decay_rate_per_hour * time_elapsed_hours)
-                        decay_factor = max(
-                            0.95, decay_factor
-                        )  # Don't decay more than 5% per update
-                        self.cumulative_energy_wh *= decay_factor
+                # Note: Removed decay factor application to maintain truly cumulative behavior
+                # RT estimates should only decrease when corrected by new official readings
 
         self.last_power_update = timestamp
 
