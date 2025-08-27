@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint format run scan clean shell sync add upgrade stop test-tesla tesla-list tesla-discover tesla-config tesla-mint tesla-refresh
+.PHONY: help install dev test lint format run scan clean shell sync add upgrade stop test-tesla tesla-list tesla-discover tesla-config tesla-mint tesla-refresh tesla-control
 
 help:
 	@echo "Available commands:"
@@ -7,6 +7,7 @@ help:
 	@echo "  make test        - Run tests"
 	@echo "  make test-tesla     - Test Tesla API client (SAFE: read-only, no charging commands)"
 	@echo "  make tesla-list     - List registered Tesla products (SAFE: read-only)"
+	@echo "  make tesla-control  - Interactive Tesla charging control CLI"
 	@echo "  make tesla-discover - Discover your Tesla vehicles and get config values"
 	@echo "  make tesla-config   - Show manual configuration guide for vehicle ID/tag"
 	@echo "  make tesla-mint     - Complete initial Tesla setup (OAuth + registration)"
@@ -103,3 +104,7 @@ tesla-mint:
 tesla-refresh:
 	@echo "Refreshing Tesla tokens and verifying registration..."
 	@uv run python scripts/tesla_refresh.py
+
+tesla-control:
+	@echo "Starting Tesla charging control CLI..."
+	@uv run python scripts/tesla_control.py

@@ -12,6 +12,7 @@ dependencies = [
     "pyyaml>=6.0.2",
     "aiohttp>=3.8.0",
     "websockets>=11.0.0",
+    "tesla-fleet-api>=1.2.4",
 ]
 
 [project.optional-dependencies]

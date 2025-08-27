@@ -65,14 +65,30 @@ ev_charging:
     increase_step: 1          # Amps to increase when conditions allow more charging
     decrease_step: 2          # Amps to decrease when limiting is needed
 
-# Tesla Integration (Optional - for future Tesla API integration)
+# Tesla Integration
 tesla:
   enabled: false
-  host: null                    # Tesla Wall Connector IP (local API)
+  
+  # Fleet API Authentication (required)
+  client_id: null               # Tesla Fleet API client ID
+  client_secret: null           # Tesla Fleet API client secret  
   refresh_token: null           # Tesla API refresh token
+  vehicle_id: null              # Tesla vehicle ID (numeric)
+  vehicle_tag: null             # Tesla vehicle tag/VIN
+  vin: null                     # Tesla VIN (required for signed commands)
+  
+  # TVCP (Tesla Vehicle Command Protocol) - Required for modern vehicles
+  private_key: "data/tesla-reg-keys/private-key.pem"  # Path to private key for signed commands
+  
+  # Charging Configuration
   min_charging_amps: 5         # Minimum charging current
   max_charging_amps: 32        # Maximum charging current
   charging_voltage: 200        # EV charging voltage
+  
+  # Optional: Advanced settings
+  region: "auto"               # Tesla region: "auto", "na", "eu", "cn"
+  command_rate_limit: 5        # Commands per minute
+  timeout: 10                  # Request timeout in seconds
 
 # Logging Configuration
 logging:

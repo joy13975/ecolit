@@ -12,17 +12,19 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from ecolit.charging.tesla_api import TeslaAPIClient
+from tesla_utils import handle_sleeping_vehicle_with_wake
 
 
 async def _poll_vehicle_data_with_wake_option(client):
     """Poll vehicle data with option to wake if vehicle is sleeping."""
     print()
-    print("🔄 Polling vehicle data...")
     
-    # Use the new method that specifically handles sleeping vehicles
-    vehicle_data, is_sleeping = await client.poll_vehicle_data_with_wake_option()
+    # Use shared wake-up logic with default Yes
+    vehicle_data, success = await handle_sleeping_vehicle_with_wake(
+        client, "get current readings"
+    )
     
-    if vehicle_data.timestamp:
+    if success and vehicle_data.timestamp:
         print("🚗 Recent Vehicle Data:")
         if vehicle_data.battery_level is not None:
             print(f"  Battery Level: {vehicle_data.battery_level}%")
@@ -33,45 +35,7 @@ async def _poll_vehicle_data_with_wake_option(client):
         if vehicle_data.charge_port_status:
             print(f"  Charge Port: {vehicle_data.charge_port_status}")
         print(f"  Last Update: {vehicle_data.timestamp}")
-        
-    elif is_sleeping:
-        print("😴 Vehicle is sleeping or offline.")
-        response = input("Would you like to wake the vehicle to get current readings? (y/N): ").lower().strip()
-        
-        if response in ['y', 'yes']:
-            print("⏰ Sending wake command to vehicle...")
-            try:
-                wake_success = await client.wake_up()
-                if wake_success:
-                    print("✅ Wake command sent successfully")
-                    print("⏳ Waiting for vehicle to wake up (this may take 10-30 seconds)...")
-                    
-                    # Wait a bit for vehicle to wake up and retry
-                    import asyncio
-                    await asyncio.sleep(15)  # Give vehicle time to wake up
-                    
-                    print("🔄 Retrying vehicle data poll...")
-                    vehicle_data, _ = await client.poll_vehicle_data_with_wake_option()
-                    if vehicle_data.timestamp:
-                        print("🚗 Vehicle Data (after wake):")
-                        if vehicle_data.battery_level is not None:
-                            print(f"  Battery Level: {vehicle_data.battery_level}%")
-                        if vehicle_data.charging_power is not None:
-                            print(f"  Charging Power: {vehicle_data.charging_power}kW")
-                        if vehicle_data.charge_amps is not None:
-                            print(f"  Charging Amps: {vehicle_data.charge_amps}A")
-                        if vehicle_data.charge_port_status:
-                            print(f"  Charge Port: {vehicle_data.charge_port_status}")
-                        print(f"  Last Update: {vehicle_data.timestamp}")
-                    else:
-                        print("⚠️  Vehicle may still be waking up. Try again in a few minutes.")
-                else:
-                    print("❌ Failed to send wake command")
-            except Exception as wake_e:
-                print(f"❌ Error waking vehicle: {wake_e}")
-        else:
-            print("💤 Vehicle left sleeping")
-    else:
+    elif not success:
         print("ℹ️  No recent telemetry data available")
         print("   (This is normal if vehicle is sleeping or offline)")
 
