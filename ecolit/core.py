@@ -9,6 +9,8 @@ from pychonet import EchonetInstance, HomeSolarPower, StorageBattery
 from pychonet.lib.udpserver import UDPServer
 from epc_constants import CommonEPC, SolarEPC, BatteryEPC, EPC_NAMES
 
+from .charging import EVChargingController, EnergyMetrics
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +29,9 @@ class EcoliteManager:
         self.solar_instance = None
         self.battery_instance = None
         self._technical_soc_warning_shown = False
+        
+        # Initialize EV charging controller
+        self.ev_controller = EVChargingController(config)
 
     async def start(self) -> None:
         """Start the ECHONET Lite manager."""
@@ -547,8 +552,19 @@ class EcoliteManager:
                 except Exception as e:
                     logger.error(f"Error reading battery data: {e}")
 
-            # Note: Solar surplus calculation removed to avoid confusion with grid export
-            # EV charging algorithm will calculate surplus based on real-time measurements
+            # EV Charging Control - Calculate optimal charging amps based on policy
+            ev_amps = 0
+            if self.ev_controller.is_enabled():
+                # Create energy metrics for EV controller
+                metrics = EnergyMetrics(
+                    battery_soc=battery_soc,
+                    battery_power=battery_power,
+                    grid_power_flow=grid_power_flow,
+                    solar_power=solar_power
+                )
+                
+                # Calculate target amps based on current policy
+                ev_amps = self.ev_controller.calculate_charging_amps(metrics)
 
             # Log essential stats for EV charging optimization in one consolidated line
             if battery_soc is not None or solar_power is not None or grid_power_flow is not None:
@@ -579,6 +595,11 @@ class EcoliteManager:
                 # Solar production
                 if solar_power is not None:
                     essential_stats.append(f"Solar: {solar_power}W")
+
+                # EV charging status
+                if self.ev_controller.is_enabled():
+                    policy_name = self.ev_controller.get_current_policy()
+                    essential_stats.append(f"EV: {ev_amps}A ({policy_name})")
 
                 # Log the consolidated essential stats
                 logger.info("⚡ EV CHARGE METRICS: " + " | ".join(essential_stats))

@@ -31,6 +31,19 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
         "app": {
             "polling_interval": 10,
         },
+        "ev_charging": {
+            "enabled": False,
+            "policy": "eco",
+            "max_amps": 20,
+            "eco": {
+                "export_threshold": 50,
+            },
+            "hurry": {
+                "max_import": 1000,
+            },
+            "adjustment_interval": 30,
+            "measurement_interval": 10,
+        },
         "tesla": {
             "enabled": False,
             "host": None,
@@ -38,18 +51,6 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
             "min_charging_amps": 5,
             "max_charging_amps": 32,
             "charging_voltage": 200,
-        },
-        "modes": {
-            "default": "grid_free",
-            "emergency_charging": False,
-            "battery_preserve": False,
-        },
-        "thresholds": {
-            "min_battery_soc": 20,
-            "target_battery_soc": 80,
-            "max_grid_power": 0,
-            "solar_buffer": 500,
-            "battery_buffer": 100,
         },
         "logging": {
             "level": "INFO",
