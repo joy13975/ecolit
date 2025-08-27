@@ -1,0 +1,85 @@
+# Ecolit Configuration Template
+# Copy this file to config.yaml and customize for your setup
+
+# Network Discovery Settings
+network:
+  # Scan ranges for device discovery
+  # Empty list = discovery mode (scans common ranges)
+  # Specific ranges = limit scanning to these subnets
+  scan_ranges: []  # Example: ["192.168.0", "192.168.1"]
+  
+  # ECHONET Lite protocol settings
+  echonet:
+    interface: "0.0.0.0"  # Network interface (0.0.0.0 = all interfaces)
+    port: 3610           # ECHONET Lite standard port
+    timeout: 5           # Discovery timeout in seconds
+
+# Device Configuration
+devices:
+  # Required devices - application will fail if these are not found
+  required:
+    - name: "Solar Inverter"
+      ip: "192.168.0.2"
+      type: "solar"
+      eojgc: 0x02      # Housing/Facility class
+      eojcc: 0x79      # Solar power generation
+      instance: 31     # Device instance number
+      
+    - name: "Storage Battery"
+      ip: "192.168.0.2"
+      type: "battery"
+      eojgc: 0x02      # Housing/Facility class
+      eojcc: 0x7D      # Storage battery
+      instance: 31     # Device instance number
+
+# Application Settings
+app:
+  polling_interval: 10  # Seconds between device polls
+  
+# Tesla Integration (Optional)
+tesla:
+  enabled: false
+  host: null                    # Tesla Wall Connector IP (local API)
+  refresh_token: null           # Tesla API refresh token
+  min_charging_amps: 5         # Minimum charging current
+  max_charging_amps: 32        # Maximum charging current
+
+# Operating Modes
+modes:
+  default: "grid_free"          # Default mode: grid_free, solar_only, emergency
+  emergency_charging: false    # Override for maximum charging speed
+  battery_preserve: false      # Prevent battery discharge for EV charging
+
+# Energy Management Thresholds  
+thresholds:
+  min_battery_soc: 20          # Minimum battery SOC to maintain (%)
+  target_battery_soc: 80       # Target battery SOC for optimization (%)
+  max_grid_power: 0            # Maximum allowed grid import (W)
+  solar_buffer: 500            # Reserve solar power for house loads (W)
+  battery_buffer: 100          # Reserve battery power margin (W)
+
+# Logging Configuration
+logging:
+  level: "INFO"                # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: "ecolit.log"           # Log file path
+  max_size: "10MB"             # Maximum log file size before rotation
+  backup_count: 5              # Number of rotated log files to keep
+
+# Example configurations:
+
+# Discovery Mode (find devices first):
+# network:
+#   scan_ranges: []
+# devices:
+#   required: []
+#   optional: []
+
+# Production Mode (validate specific devices):
+# devices:
+#   required:
+#     - name: "My Solar"
+#       ip: "192.168.0.2"
+#       type: "solar"
+#       eojgc: 0x02
+#       eojcc: 0x79
+#       instance: 31
