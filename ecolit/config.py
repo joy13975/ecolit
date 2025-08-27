@@ -52,6 +52,10 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
             "max_charging_amps": 32,
             "charging_voltage": 200,
         },
+        "metrics": {
+            "enabled": False,
+            "folder": "data/ecolit/metrics",
+        },
         "logging": {
             "level": "INFO",
             "file": "ecolit.log",

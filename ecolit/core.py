@@ -11,6 +11,7 @@ from pychonet.lib.udpserver import UDPServer
 from .charging import EnergyMetrics, EVChargingController
 from .constants import EPC_NAMES, CommonEPC
 from .devices import BatteryDevicePoller, SolarDevicePoller
+from .metrics_logger import MetricsLogger
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,9 @@ class EcoliteManager:
         # Initialize EV charging controller
         self.ev_controller = EVChargingController(config)
 
+        # Initialize metrics logger
+        self.metrics_logger = MetricsLogger(config)
+
     async def start(self) -> None:
         """Start the ECHONET Lite manager."""
         logger.info("Starting ECHONET Lite manager")
@@ -61,6 +65,10 @@ class EcoliteManager:
 
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
+
+        # Clean up metrics logger
+        if hasattr(self, "metrics_logger"):
+            self.metrics_logger.close()
 
     async def _validate_required_devices(self) -> None:
         """Validate that all required devices are present and accessible."""
@@ -413,6 +421,17 @@ class EcoliteManager:
 
                 # Log the consolidated essential stats
                 logger.info("⚡ EV CHARGE METRICS: " + " | ".join(essential_stats))
+
+                # Log metrics to CSV file
+                if self.ev_controller.is_enabled():
+                    self.metrics_logger.log_metrics(
+                        battery_soc=battery_soc,
+                        battery_power=battery_power,
+                        grid_power_flow=grid_power_flow,
+                        solar_power=solar_power,
+                        ev_charging_amps=ev_amps,
+                        ev_policy=policy_name,
+                    )
             else:
                 logger.warning("⚠️  No essential metrics available for EV charging optimization")
 
