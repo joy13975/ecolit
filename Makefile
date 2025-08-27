@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint format run scan clean shell sync add upgrade
+.PHONY: help install dev test lint format run scan clean shell sync add upgrade stop
 
 help:
 	@echo "Available commands:"
@@ -8,6 +8,7 @@ help:
 	@echo "  make lint       - Run ruff linter"
 	@echo "  make format     - Format code with ruff"
 	@echo "  make run        - Run the main application"
+	@echo "  make stop       - Stop any running ecolit processes"
 	@echo "  make scan       - Scan for ECHONET Lite devices"
 	@echo "  make clean      - Clean cache and build files"
 	@echo "  make shell      - Start Python REPL in virtual environment"
@@ -63,3 +64,9 @@ endif
 
 upgrade:
 	uv lock --upgrade
+
+stop:
+	@echo "Stopping ecolit processes..."
+	@pkill -f "ecolit" 2>/dev/null || true
+	@lsof -ti:3610 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@echo "All ecolit processes stopped."

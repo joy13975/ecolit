@@ -1,4 +1,5 @@
 .tesla*
+data
 
 # Ecolit config files (keep only template)
 config.yaml
