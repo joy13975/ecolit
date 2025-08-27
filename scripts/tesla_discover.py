@@ -41,8 +41,8 @@ async def discover_vehicles():
 
     print("🔐 Authenticating with Tesla API...")
 
-    # Get access token
-    auth_url = "https://auth.tesla.com/oauth2/v3/token"
+    # Get access token using Fleet API authentication
+    auth_url = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
     auth_data = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
@@ -52,8 +52,12 @@ async def discover_vehicles():
 
     try:
         async with aiohttp.ClientSession() as session:
-            # Authenticate
-            async with session.post(auth_url, json=auth_data) as response:
+            # Authenticate using form data (not JSON)
+            async with session.post(
+                auth_url, 
+                data=auth_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            ) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     print(f"❌ Authentication failed: {response.status} - {error_text}")
@@ -69,8 +73,16 @@ async def discover_vehicles():
                 "Content-Type": "application/json",
             }
 
-            # Try the owner's API first (more accessible for personal accounts)
-            vehicles_url = "https://owner-api.teslamotors.com/api/1/vehicles"
+            # Determine Fleet API region from refresh token
+            if refresh_token.startswith("EU_"):
+                api_endpoint = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
+            elif refresh_token.startswith("AP_"):
+                api_endpoint = "https://fleet-api.prd.ap.vn.cloud.tesla.com"
+            else:
+                api_endpoint = "https://fleet-api.prd.na.vn.cloud.tesla.com"
+
+            # Use Fleet API vehicles endpoint
+            vehicles_url = f"{api_endpoint}/api/1/vehicles"
 
             async with session.get(vehicles_url, headers=headers) as response:
                 if response.status == 200:
@@ -97,45 +109,6 @@ async def discover_vehicles():
                         print(f"  ID String: {vehicle.get('id_s', 'Unknown')}")
                         print(f"  State: {vehicle.get('state', 'Unknown')}")
                         print(f"  Access Type: {vehicle.get('access_type', 'Unknown')}")
-                        print()
-
-                        # Show configuration snippet
-                        print("📝 Add these to your config.yaml under 'tesla:':")
-                        print(f'  vehicle_id: "{vehicle.get("id_s", "")}"  # ID string')
-                        print(f'  vehicle_tag: "{vehicle.get("id", "")}"  # Numeric ID')
-                        print(f"  # VIN: {vehicle.get('vin', 'Unknown')}")
-                        print(f"  # Name: {vehicle.get('display_name', 'Unknown')}")
-                        print()
-
-                    if len(vehicles) == 1:
-                        vehicle = vehicles[0]
-                        print("✅ Since you have only one vehicle, here's your complete config:")
-                        print()
-                        print("# Tesla Fleet API Integration")
-                        print("tesla:")
-                        print("  enabled: true")
-                        print("  ")
-                        print("  # Fleet API Authentication (keep your existing values)")
-                        print("  refresh_token: <your_existing_token>")
-                        print("  client_id: <your_existing_client_id>")
-                        print("  client_secret: <your_existing_client_secret>")
-                        print("  ")
-                        print("  # Vehicle Configuration")
-                        print(f'  vehicle_id: "{vehicle.get("id_s", "")}"  # ID string')
-                        print(f'  vehicle_tag: "{vehicle.get("id", "")}"  # Numeric ID')
-                        print("  ")
-                        print("  # Fleet Telemetry")
-                        print('  telemetry_endpoint: "wss://streaming.vn.tesla.services/connect"')
-                        print(
-                            '  telemetry_fields: ["Battery_level", "Charging_power", "Charge_amps", "Charge_port_status"]'
-                        )
-                        print("  ")
-                        print("  # Charging Limits")
-                        print("  min_charging_amps: 6")
-                        print("  max_charging_amps: 20")
-                        print("  charging_voltage: 200")
-                        print()
-
                 else:
                     error_text = await response.text()
                     print(f"❌ Failed to get vehicles: {response.status}")

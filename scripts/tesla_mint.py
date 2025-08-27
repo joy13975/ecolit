@@ -209,15 +209,18 @@ async def mint_tesla_tokens():
     PORT = 8750
     print(f"🔧 Checking if port {PORT} is in use...")
 
-    # Kill any process using the port
+    # Kill any process using the port (using same approach as main app)
     try:
-        # Find process using the port
-        result = subprocess.run(f"lsof -ti:{PORT}", shell=True, capture_output=True, text=True)
-        if result.stdout.strip():
-            pids = result.stdout.strip().split("\n")
-            for pid in pids:
-                subprocess.run(f"kill -9 {pid}", shell=True, capture_output=True)
-            print(f"✅ Cleared port {PORT} (killed process {', '.join(pids)})")
+        result = subprocess.run(
+            f"lsof -ti:{PORT} 2>/dev/null | xargs kill -9 2>/dev/null || true",
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            print(f"✅ Cleared port {PORT}")
+            # Give processes time to release the port
+            await asyncio.sleep(1)
     except Exception:
         pass  # Port might not be in use, which is fine
 
@@ -239,7 +242,7 @@ async def mint_tesla_tokens():
                 f"&client_id={client_id}"
                 f"&redirect_uri={urllib.parse.quote(redirect_uri)}"
                 f"&scope={urllib.parse.quote(scope_string)}"
-                f"&prompt=consent"
+                f"&prompt_missing_scopes=true"  # this allows scope selection
             )
 
             print("\n🔐 Opening Tesla OAuth authorization in browser...")
