@@ -8,12 +8,11 @@ from pathlib import Path
 
 import yaml
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from ecolit.charging.tesla_api import TeslaAPIClient
-from tesla_utils import handle_sleeping_vehicle_with_wake, ensure_vehicle_awake_for_command, prompt_yes_no
+from ecolit.tesla.utils import (
+    ensure_vehicle_awake_for_command,
+    prompt_yes_no,
+)
 
 
 def format_charging_schedule(schedule_data: dict) -> str:
@@ -24,48 +23,102 @@ def format_charging_schedule(schedule_data: dict) -> str:
     if schedule_data.get("status") == "vehicle_sleeping":
         return "😴 Vehicle is sleeping - cannot retrieve charging schedule"
 
-    # Extract key scheduling information
     lines = []
 
-    # Check for scheduled charging pending
-    if "scheduled_charging_pending" in schedule_data:
-        pending = schedule_data["scheduled_charging_pending"]
-        lines.append(f"📅 Scheduled Charging Pending: {'Yes' if pending else 'No'}")
+    # Handle charge_schedules array (main scheduling data)
+    if "charge_schedules" in schedule_data:
+        schedules = schedule_data["charge_schedules"]
+        if schedules:
+            lines.append(f"📅 Active Schedules: {len(schedules)} configured")
 
-    # Check for scheduled start time
-    if "scheduled_charging_start_time" in schedule_data:
-        start_time = schedule_data["scheduled_charging_start_time"]
-        if start_time:
-            # Convert timestamp to readable format
-            try:
-                dt = datetime.fromtimestamp(start_time)
-                lines.append(f"⏰ Scheduled Start Time: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
-            except (ValueError, TypeError):
-                lines.append(f"⏰ Scheduled Start Time: {start_time}")
+            for i, schedule in enumerate(schedules, 1):
+                if schedule.get("enabled", False):
+                    # Convert start/end times from minutes since midnight
+                    start_minutes = schedule.get("start_time", 0)
+                    end_minutes = schedule.get("end_time", 0)
 
-    # Check for scheduled departure time
-    if "scheduled_departure_time" in schedule_data:
-        departure_time = schedule_data["scheduled_departure_time"]
-        if departure_time:
-            try:
-                dt = datetime.fromtimestamp(departure_time)
-                lines.append(f"🚗 Scheduled Departure: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
-            except (ValueError, TypeError):
-                lines.append(f"🚗 Scheduled Departure: {departure_time}")
+                    start_hour, start_min = divmod(start_minutes, 60)
+                    end_hour, end_min = divmod(end_minutes, 60)
 
-    # Check for charging mode
-    if "scheduled_charging_mode" in schedule_data:
-        mode = schedule_data["scheduled_charging_mode"]
-        if mode:
-            lines.append(f"🔧 Charging Mode: {mode}")
+                    # Convert days_of_week bitmask to readable format
+                    days_mask = schedule.get("days_of_week", 0)
+                    days = []
+                    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                    for j, day in enumerate(day_names):
+                        if days_mask & (1 << j):
+                            days.append(day)
+
+                    days_str = (
+                        ", ".join(days) if days else "Daily" if days_mask == 127 else "Custom"
+                    )
+
+                    lines.append(
+                        f"  📋 Schedule {i}: {start_hour:02d}:{start_min:02d} - {end_hour:02d}:{end_min:02d} ({days_str})"
+                    )
+
+                    # Show name if available
+                    name = schedule.get("name", "").strip()
+                    if name:
+                        lines.append(f"     Name: {name}")
+                else:
+                    lines.append(f"  ⏸️  Schedule {i}: Disabled")
+        else:
+            lines.append("📅 No charging schedules configured")
+
+    # Handle charge_schedule_window (current/next window)
+    if "charge_schedule_window" in schedule_data:
+        window = schedule_data["charge_schedule_window"]
+        if window and window.get("enabled", False):
+            start_minutes = window.get("start_time", 0)
+            end_minutes = window.get("end_time", 0)
+
+            start_hour, start_min = divmod(start_minutes, 60)
+            end_hour, end_min = divmod(end_minutes, 60)
+
+            lines.append(
+                f"⏰ Current Window: {start_hour:02d}:{start_min:02d} - {end_hour:02d}:{end_min:02d}"
+            )
+
+    # Show next schedule status
+    if "next_schedule" in schedule_data:
+        next_active = schedule_data["next_schedule"]
+        lines.append(f"⏭️  Next Schedule: {'Active' if next_active else 'None'}")
+
+    # Show charge buffer if available
+    if "charge_buffer" in schedule_data:
+        buffer_minutes = schedule_data["charge_buffer"]
+        lines.append(f"🛡️  Charge Buffer: {buffer_minutes} minutes")
+
+    # Check for old-format scheduled charging data (fallback)
+    if not lines:
+        # Check for scheduled charging pending
+        if "scheduled_charging_pending" in schedule_data:
+            pending = schedule_data["scheduled_charging_pending"]
+            lines.append(f"📅 Scheduled Charging Pending: {'Yes' if pending else 'No'}")
+
+        # Check for scheduled start time
+        if "scheduled_charging_start_time" in schedule_data:
+            start_time = schedule_data["scheduled_charging_start_time"]
+            if start_time:
+                try:
+                    dt = datetime.fromtimestamp(start_time)
+                    lines.append(f"⏰ Scheduled Start Time: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
+                except (ValueError, TypeError):
+                    lines.append(f"⏰ Scheduled Start Time: {start_time}")
+
+        # Check for scheduled departure time
+        if "scheduled_departure_time" in schedule_data:
+            departure_time = schedule_data["scheduled_departure_time"]
+            if departure_time:
+                try:
+                    dt = datetime.fromtimestamp(departure_time)
+                    lines.append(f"🚗 Scheduled Departure: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
+                except (ValueError, TypeError):
+                    lines.append(f"🚗 Scheduled Departure: {departure_time}")
 
     # If we found some data, return it
     if lines:
         return "\n".join(lines)
-
-    # If no recognized fields, show raw data (for debugging)
-    if schedule_data:
-        return f"📊 Raw schedule data: {schedule_data}"
 
     return "ℹ️  No active charging schedule configured"
 
@@ -126,9 +179,9 @@ async def get_vehicle_status_with_wake_option(client: TeslaAPIClient) -> bool:
 
 async def show_current_status(client: TeslaAPIClient):
     """Display current vehicle charging status."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🚗 CURRENT TESLA VEHICLE STATUS")
-    print("="*60)
+    print("=" * 60)
 
     # Check if vehicle is awake or offer to wake it
     is_awake = await get_vehicle_status_with_wake_option(client)
@@ -175,9 +228,9 @@ async def show_current_status(client: TeslaAPIClient):
 
 async def set_charging_amps_interactive(client: TeslaAPIClient):
     """Interactively set charging amperage."""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("⚡ SET CHARGING AMPERAGE")
-    print("="*60)
+    print("=" * 60)
 
     # Ensure vehicle is awake using shared logic
     if not await ensure_vehicle_awake_for_command(client, "set charging amperage"):
@@ -200,7 +253,9 @@ async def set_charging_amps_interactive(client: TeslaAPIClient):
 
     try:
         # Get user input
-        amps_input = input(f"Enter new charging amperage ({client.min_amps}-{client.max_amps}A): ").strip()
+        amps_input = input(
+            f"Enter new charging amperage ({client.min_amps}-{client.max_amps}A): "
+        ).strip()
 
         if not amps_input:
             print("❌ No input provided, cancelled")
@@ -258,9 +313,9 @@ async def set_charging_amps_interactive(client: TeslaAPIClient):
 async def main_menu(client: TeslaAPIClient):
     """Main interactive menu."""
     while True:
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("🚗 TESLA CHARGING CONTROL")
-        print("="*60)
+        print("=" * 60)
         print("1. Show current status (schedule & amp configuration)")
         print("2. Set charging amperage")
         print("3. Exit")
@@ -289,7 +344,7 @@ async def main_menu(client: TeslaAPIClient):
 
 async def tesla_control():
     """Main Tesla control CLI function."""
-    config_path = project_root / "config.yaml"
+    config_path = Path.cwd() / "config.yaml"
 
     if not config_path.exists():
         print("❌ config.yaml not found")
@@ -306,12 +361,14 @@ async def tesla_control():
         print("💡 Set tesla.enabled: true to enable Tesla API")
         return False
 
-    if not all([
-        tesla_config.get("client_id"),
-        tesla_config.get("client_secret"),
-        tesla_config.get("refresh_token"),
-        tesla_config.get("vehicle_tag"),
-    ]):
+    if not all(
+        [
+            tesla_config.get("client_id"),
+            tesla_config.get("client_secret"),
+            tesla_config.get("refresh_token"),
+            tesla_config.get("vehicle_tag"),
+        ]
+    ):
         print("❌ Tesla API not properly configured")
         print("💡 Configure client_id, client_secret, refresh_token, and vehicle_tag")
         print("💡 Use 'make tesla-discover' to find your vehicle configuration")

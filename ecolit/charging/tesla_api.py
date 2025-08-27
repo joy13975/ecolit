@@ -1,6 +1,5 @@
 """Tesla Fleet API client using tesla-fleet-api library with proper TVCP support."""
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -76,7 +75,7 @@ class TeslaAPIClient:
 
         # Private key for signed commands (TVCP)
         self.private_key = config.get("private_key")  # Path to private key file
-        
+
         logger.info(
             f"Tesla API client initialized: vehicle_id={self.vehicle_id}, region={self.region}, "
             f"min_amps={self.min_amps}, max_amps={self.max_amps}, signed_commands={bool(self.private_key)}"
@@ -103,11 +102,12 @@ class TeslaAPIClient:
         try:
             # Create HTTP session
             import aiohttp
+
             session = aiohttp.ClientSession()
-            
+
             # Get access token first
             access_token = await self._get_access_token()
-            
+
             # Initialize API client
             self.api = TeslaFleetApi(
                 session=session,
@@ -118,7 +118,7 @@ class TeslaAPIClient:
             # Set up private key for signed commands if provided
             if self.private_key:
                 try:
-                    with open(self.private_key, 'r') as f:
+                    with open(self.private_key) as f:
                         private_key_content = f.read()
                     self.api.private_key = private_key_content
                     logger.info("Private key loaded for signed vehicle commands (TVCP)")
@@ -134,7 +134,7 @@ class TeslaAPIClient:
 
     async def close(self):
         """Close the Tesla API client."""
-        if self.api and hasattr(self.api, 'session'):
+        if self.api and hasattr(self.api, "session"):
             # Close the HTTP session
             await self.api.session.close()
         logger.info("Tesla API client closed")
@@ -143,17 +143,17 @@ class TeslaAPIClient:
         """Get access token using refresh token."""
         try:
             import aiohttp
-            
+
             # Tesla OAuth token endpoint
             token_url = "https://auth.tesla.com/oauth2/v3/token"
-            
+
             data = {
                 "grant_type": "refresh_token",
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
                 "refresh_token": self.refresh_token,
             }
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(token_url, data=data) as response:
                     if response.status == 200:
@@ -163,9 +163,11 @@ class TeslaAPIClient:
                         return access_token
                     else:
                         error_text = await response.text()
-                        logger.error(f"Failed to get access token: {response.status} - {error_text}")
+                        logger.error(
+                            f"Failed to get access token: {response.status} - {error_text}"
+                        )
                         raise RuntimeError(f"Token refresh failed: {response.status}")
-                        
+
         except Exception as e:
             logger.error(f"Failed to get Tesla access token: {e}")
             raise
@@ -179,7 +181,7 @@ class TeslaAPIClient:
             # Get vehicle data from Fleet API through vehicles endpoint
             vehicle_api = self.api.vehicles.specific(self.vehicle_id)
             vehicle_data = await vehicle_api.vehicle_data()
-            
+
             if not vehicle_data or vehicle_data.get("response") is None:
                 return TeslaVehicleData()
 
@@ -198,7 +200,7 @@ class TeslaAPIClient:
 
             # Cache the data
             self.vehicle_data = new_data
-            
+
             logger.debug(
                 f"Tesla data: SOC={new_data.battery_level}%, "
                 f"Power={new_data.charging_power}kW, "
@@ -223,13 +225,13 @@ class TeslaAPIClient:
             # Get vehicle data with charge schedule endpoints
             vehicle_api = self.api.vehicles.specific(self.vehicle_id)
             vehicle_data = await vehicle_api.vehicle_data(endpoints=["charge_schedule_data"])
-            
+
             if not vehicle_data or vehicle_data.get("response") is None:
                 return {}
 
             response = vehicle_data["response"]
             charge_schedule = response.get("charge_schedule_data", {})
-            
+
             logger.debug(f"Tesla charging schedule: {charge_schedule}")
             return charge_schedule
 
@@ -249,13 +251,13 @@ class TeslaAPIClient:
             # Get vehicle data with charge state endpoint
             vehicle_api = self.api.vehicles.specific(self.vehicle_id)
             vehicle_data = await vehicle_api.vehicle_data(endpoints=["charge_state"])
-            
+
             if not vehicle_data or vehicle_data.get("response") is None:
                 return {}
 
             response = vehicle_data["response"]
             charge_state = response.get("charge_state", {})
-            
+
             config = {
                 "charge_current_request": charge_state.get("charge_current_request"),
                 "charge_current_request_max": charge_state.get("charge_current_request_max"),
@@ -264,7 +266,7 @@ class TeslaAPIClient:
                 "charger_voltage": charge_state.get("charger_voltage"),
                 "charger_power": charge_state.get("charger_power"),
             }
-            
+
             logger.debug(f"Tesla charging config: {config}")
             return config
 
@@ -284,11 +286,11 @@ class TeslaAPIClient:
             # Try to get vehicle data first - bypass the exception handling in get_vehicle_data
             vehicle_api = self.api.vehicles.specific(self.vehicle_id)
             vehicle_data_result = await vehicle_api.vehicle_data()
-            
+
             # If we get here, vehicle responded - extract data
             response = vehicle_data_result.get("response", {})
             charge_state = response.get("charge_state", {})
-            
+
             vehicle_data = TeslaVehicleData(
                 battery_level=charge_state.get("battery_level"),
                 charging_power=charge_state.get("charger_power"),
@@ -297,9 +299,9 @@ class TeslaAPIClient:
                 charge_port_status=charge_state.get("charge_port_door_open"),
                 timestamp=datetime.now(),
             )
-            
+
             return vehicle_data, False
-                
+
         except VehicleOffline:
             # Vehicle is offline/sleeping
             logger.debug("Vehicle is offline/sleeping")
@@ -316,7 +318,7 @@ class TeslaAPIClient:
         try:
             vehicle_api = self.api.vehicles.specific(self.vehicle_id)
             result = await vehicle_api.wake_up()
-            
+
             if result and result.get("response"):
                 logger.info("Tesla vehicle wake_up command sent successfully")
                 return True
@@ -346,7 +348,7 @@ class TeslaAPIClient:
                 # Fall back to regular Fleet API (may fail with 403 on modern vehicles)
                 vehicle_api = self.api.vehicles.specific(self.vehicle_id)
                 result = await vehicle_api.set_charging_amps(charging_amps=amps)
-            
+
             if result and result.get("response", {}).get("result"):
                 logger.info(f"Tesla charging amps set to {amps}A")
                 return True
@@ -358,7 +360,7 @@ class TeslaAPIClient:
             error_msg = str(e)
             if "Tesla Vehicle Command Protocol required" in error_msg:
                 logger.error(
-                    f"TVCP required for set_charging_amps. Configure private_key in config to enable signed commands."
+                    "TVCP required for set_charging_amps. Configure private_key in config to enable signed commands."
                 )
             else:
                 logger.error(f"Failed to set Tesla charging amps: {e}")
@@ -376,7 +378,7 @@ class TeslaAPIClient:
             else:
                 vehicle_api = self.api.vehicles.specific(self.vehicle_id)
                 result = await vehicle_api.charge_start()
-            
+
             if result and result.get("response", {}).get("result"):
                 logger.info("Tesla charging started")
                 return True
@@ -400,7 +402,7 @@ class TeslaAPIClient:
             else:
                 vehicle_api = self.api.vehicles.specific(self.vehicle_id)
                 result = await vehicle_api.charge_stop()
-            
+
             if result and result.get("response", {}).get("result"):
                 logger.info("Tesla charging stopped")
                 return True

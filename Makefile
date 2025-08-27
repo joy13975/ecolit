@@ -83,28 +83,28 @@ test-tesla:
 	@echo "⚠️  SAFE MODE: Only authentication and read operations will be performed"
 	@echo "🚫 NO WRITE OPERATIONS: Charging commands will NOT be executed"
 	@echo ""
-	@uv run python scripts/tesla_test.py
+	@uv run python -m ecolit.tesla.test
 
 tesla-list:
 	@echo "Listing registered Tesla products..."
-	@uv run python scripts/tesla_list.py
+	@uv run python -m ecolit.tesla.list
 
 tesla-discover:
 	@echo "Discovering your Tesla vehicles..."
-	@uv run python scripts/tesla_discover.py
+	@uv run python -m ecolit.tesla.discover
 
 tesla-config:
 	@echo "Tesla configuration guide..."
-	@uv run python scripts/tesla_config_guide.py
+	@uv run python -m ecolit.tesla.config_guide
 
 tesla-mint:
 	@echo "Starting complete Tesla setup (OAuth + registration)..."
-	@uv run python scripts/tesla_mint.py
+	@uv run python -m ecolit.tesla.mint
 
 tesla-refresh:
 	@echo "Refreshing Tesla tokens and verifying registration..."
-	@uv run python scripts/tesla_refresh.py
+	@uv run python -m ecolit.tesla.refresh
 
 tesla-control:
 	@echo "Starting Tesla charging control CLI..."
-	@uv run python scripts/tesla_control.py
+	@uv run python -m ecolit.tesla.control

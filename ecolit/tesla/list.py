@@ -2,28 +2,21 @@
 """List registered Tesla products and test API connectivity."""
 
 import asyncio
-import sys
 from pathlib import Path
 
 import yaml
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from ecolit.charging.tesla_api import TeslaAPIClient
-from tesla_utils import handle_sleeping_vehicle_with_wake
+from ecolit.tesla.utils import handle_sleeping_vehicle_with_wake
 
 
 async def _poll_vehicle_data_with_wake_option(client):
     """Poll vehicle data with option to wake if vehicle is sleeping."""
     print()
-    
+
     # Use shared wake-up logic with default Yes
-    vehicle_data, success = await handle_sleeping_vehicle_with_wake(
-        client, "get current readings"
-    )
-    
+    vehicle_data, success = await handle_sleeping_vehicle_with_wake(client, "get current readings")
+
     if success and vehicle_data.timestamp:
         print("🚗 Recent Vehicle Data:")
         if vehicle_data.battery_level is not None:
@@ -42,7 +35,7 @@ async def _poll_vehicle_data_with_wake_option(client):
 
 async def list_tesla_products():
     """List Tesla products and test API connectivity."""
-    config_path = project_root / "config.yaml"
+    config_path = Path.cwd() / "config.yaml"
 
     if not config_path.exists():
         print("❌ config.yaml not found")

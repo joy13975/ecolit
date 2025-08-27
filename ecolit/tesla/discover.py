@@ -2,21 +2,15 @@
 """Discover Tesla vehicles and get their IDs for configuration."""
 
 import asyncio
-import sys
 from pathlib import Path
 
-import yaml
-
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 import aiohttp
+import yaml
 
 
 async def discover_vehicles():
     """Discover Tesla vehicles using the Fleet API."""
-    config_path = project_root / "config.yaml"
+    config_path = Path.cwd() / "config.yaml"
 
     if not config_path.exists():
         print("❌ config.yaml not found")
@@ -42,7 +36,9 @@ async def discover_vehicles():
     print("🔐 Authenticating with Tesla API...")
 
     # Get access token using Fleet API authentication
-    auth_endpoint = tesla_config.get("auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token")
+    auth_endpoint = tesla_config.get(
+        "auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+    )
     auth_data = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
@@ -54,9 +50,9 @@ async def discover_vehicles():
         async with aiohttp.ClientSession() as session:
             # Authenticate using form data (not JSON)
             async with session.post(
-                auth_endpoint, 
+                auth_endpoint,
                 data=auth_data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"}
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -74,12 +70,15 @@ async def discover_vehicles():
             }
 
             # Get Fleet API endpoints from config
-            fleet_endpoints = tesla_config.get("fleet_api_endpoints", {
-                "na": "https://fleet-api.prd.na.vn.cloud.tesla.com",
-                "eu": "https://fleet-api.prd.eu.vn.cloud.tesla.com", 
-                "ap": "https://fleet-api.prd.ap.vn.cloud.tesla.com"
-            })
-            
+            fleet_endpoints = tesla_config.get(
+                "fleet_api_endpoints",
+                {
+                    "na": "https://fleet-api.prd.na.vn.cloud.tesla.com",
+                    "eu": "https://fleet-api.prd.eu.vn.cloud.tesla.com",
+                    "ap": "https://fleet-api.prd.ap.vn.cloud.tesla.com",
+                },
+            )
+
             # Determine Fleet API region from refresh token
             if refresh_token.startswith("EU_"):
                 api_endpoint = fleet_endpoints["eu"]

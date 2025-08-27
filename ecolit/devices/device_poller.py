@@ -177,14 +177,18 @@ class BatteryDevicePoller(DevicePollerBase):
     def __init__(self, device_instance: dict[str, Any], api_client: Any):
         super().__init__(device_instance, api_client)
         self._technical_soc_warning_shown = False
-        
+
         # Initialize real-time SoC estimator - MUST have capacity_kwh in config
-        battery_capacity_kwh = device_instance.get('capacity_kwh')
+        battery_capacity_kwh = device_instance.get("capacity_kwh")
         if battery_capacity_kwh is None:
-            raise ValueError(f"Battery device '{device_instance.get('name', 'Unknown')}' missing required 'capacity_kwh' in config")
-        
+            raise ValueError(
+                f"Battery device '{device_instance.get('name', 'Unknown')}' missing required 'capacity_kwh' in config"
+            )
+
         self.realtime_soc_estimator = RealtimeSoCEstimator(battery_capacity_kwh)
-        logger.info(f"🔋 Real-time SoC estimator initialized for {device_instance.get('name', 'Battery')} ({battery_capacity_kwh}kWh)")
+        logger.info(
+            f"🔋 Real-time SoC estimator initialized for {device_instance.get('name', 'Battery')} ({battery_capacity_kwh}kWh)"
+        )
 
     async def poll_battery_data(self) -> dict[str, Any | None]:
         """Poll battery device for state and power data.
@@ -241,24 +245,24 @@ class BatteryDevicePoller(DevicePollerBase):
             # Read battery power flow
             battery_power = await self._read_battery_power(battery_device)
             result["battery_power"] = battery_power
-            
+
             # Update real-time SoC estimator
             if official_soc is not None:
                 self.realtime_soc_estimator.update_official_soc(official_soc)
-            
+
             if battery_power is not None:
                 self.realtime_soc_estimator.update_power(battery_power)
-                
+
             # Get real-time SoC estimate
             soc_estimate = self.realtime_soc_estimator.get_estimated_soc()
             result["realtime_soc"] = soc_estimate.estimated_soc
             result["soc_confidence"] = soc_estimate.confidence
             result["soc_source"] = soc_estimate.source
-            
+
             # Add charging info
             charging_info = self.realtime_soc_estimator.get_charging_info()
-            result["charging_rate_pct_per_hour"] = charging_info['charging_rate_percent_per_hour']
-            result["time_to_full_hours"] = charging_info['time_to_full_hours']
+            result["charging_rate_pct_per_hour"] = charging_info["charging_rate_percent_per_hour"]
+            result["time_to_full_hours"] = charging_info["time_to_full_hours"]
 
             logger.debug(
                 f"Battery data collected: SOC={result['battery_soc']}, Mode={result['battery_mode']}, Power={result['battery_power']}W"
@@ -274,7 +278,7 @@ class BatteryDevicePoller(DevicePollerBase):
         technical_soc = None
         display_soc = None
 
-        # ORIGINAL working SoC candidates 
+        # ORIGINAL working SoC candidates
         soc_candidates = [
             (BatteryEPC.USER_DISPLAY_SOC, "display"),  # User display SOC (preferred)
             (BatteryEPC.DISPLAY_SOC_ALT, "display"),  # Alternative user display SOC

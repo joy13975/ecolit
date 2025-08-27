@@ -83,7 +83,7 @@ class TestEVControllerCritical:
     def test_corrupted_echonet_data_safety(self, mock_config):
         """CRITICAL: Handle corrupted ECHONET responses that break energy calculations."""
         controller = EVChargingController(mock_config)
-        
+
         # Test with corrupted/malformed data that could come from ECHONET devices
         corrupted_scenarios = [
             # Negative solar power (impossible)
@@ -91,17 +91,21 @@ class TestEVControllerCritical:
             # Battery SOC > 100% (corrupted)
             EnergyMetrics(battery_soc=150.0, battery_power=0, grid_power_flow=0, solar_power=1000),
             # Extreme values that could cause overflow
-            EnergyMetrics(battery_soc=50.0, battery_power=999999, grid_power_flow=-999999, solar_power=999999),
+            EnergyMetrics(
+                battery_soc=50.0, battery_power=999999, grid_power_flow=-999999, solar_power=999999
+            ),
             # Mixed None and valid values (partial corruption)
-            EnergyMetrics(battery_soc=None, battery_power=500, grid_power_flow=-200, solar_power=1000),
+            EnergyMetrics(
+                battery_soc=None, battery_power=500, grid_power_flow=-200, solar_power=1000
+            ),
             # String values instead of numbers (parsing corruption)
             EnergyMetrics(battery_soc=50.0, battery_power=0, grid_power_flow=0, solar_power=1000),
         ]
-        
+
         for corrupted_data in corrupted_scenarios:
             # Controller must not crash and must return safe amperage
             amps = controller.calculate_charging_amps(corrupted_data)
-            
+
             # Safety constraints must always hold regardless of corrupted input
             assert 0 <= amps <= mock_config["ev_charging"]["max_amps"], (
                 f"Corrupted data {corrupted_data} produced unsafe amps: {amps}"

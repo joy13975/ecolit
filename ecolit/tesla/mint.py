@@ -65,9 +65,11 @@ async def register_partner_account(tesla_config, access_token):
     """Register partner account with Tesla Fleet API."""
     client_id = tesla_config.get("client_id")
     client_secret = tesla_config.get("client_secret")
-    auth_endpoint = tesla_config.get("auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token")
+    auth_endpoint = tesla_config.get(
+        "auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+    )
     partner_domain = tesla_config.get("partner_domain")
-    
+
     if not partner_domain:
         print("❌ No partner_domain configured in tesla config")
         print("💡 Add 'partner_domain: your-domain.com' to tesla config")
@@ -77,12 +79,15 @@ async def register_partner_account(tesla_config, access_token):
     print("🔐 Getting partner token for Fleet API registration...")
 
     # Get Fleet API endpoints from config
-    fleet_endpoints = tesla_config.get("fleet_api_endpoints", {
-        "na": "https://fleet-api.prd.na.vn.cloud.tesla.com",
-        "eu": "https://fleet-api.prd.eu.vn.cloud.tesla.com", 
-        "ap": "https://fleet-api.prd.ap.vn.cloud.tesla.com"
-    })
-    
+    fleet_endpoints = tesla_config.get(
+        "fleet_api_endpoints",
+        {
+            "na": "https://fleet-api.prd.na.vn.cloud.tesla.com",
+            "eu": "https://fleet-api.prd.eu.vn.cloud.tesla.com",
+            "ap": "https://fleet-api.prd.ap.vn.cloud.tesla.com",
+        },
+    )
+
     # Determine region and endpoints
     region = tesla_config.get("region", "auto")
     if region == "auto":
@@ -170,8 +175,7 @@ async def register_partner_account(tesla_config, access_token):
 
 async def mint_tesla_tokens():
     """Complete Tesla setup: OAuth flow + partner registration."""
-    project_root = Path(__file__).parent.parent
-    config_path = project_root / "config.yaml"
+    config_path = Path.cwd() / "config.yaml"
 
     if not config_path.exists():
         print("❌ config.yaml not found")
@@ -190,8 +194,12 @@ async def mint_tesla_tokens():
 
     client_id = tesla_config.get("client_id")
     client_secret = tesla_config.get("client_secret")
-    auth_endpoint = tesla_config.get("auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token")
-    oauth_authorize_endpoint = tesla_config.get("oauth_authorize_endpoint", "https://auth.tesla.com/oauth2/v3/authorize")
+    auth_endpoint = tesla_config.get(
+        "auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+    )
+    oauth_authorize_endpoint = tesla_config.get(
+        "oauth_authorize_endpoint", "https://auth.tesla.com/oauth2/v3/authorize"
+    )
 
     if not all([client_id, client_secret]):
         print("❌ Tesla API credentials not configured")
@@ -223,7 +231,7 @@ async def mint_tesla_tokens():
             f"lsof -ti:{PORT} 2>/dev/null | xargs kill -9 2>/dev/null || true",
             shell=True,
             capture_output=True,
-            text=True
+            text=True,
         )
         if result.returncode == 0:
             print(f"✅ Cleared port {PORT}")

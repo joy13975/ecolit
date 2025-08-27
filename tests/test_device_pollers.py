@@ -14,7 +14,13 @@ class TestBatterySOCParsing:
     async def test_soc_parsing_real_echonet_scenario(self):
         """Test the EXACT scenario that caused the bug: 0xC9 returns '0/5000' but 0xE2 returns 5358."""
         # Setup device instance and mock API client
-        device_instance = {"ip": "192.168.0.2", "eojgc": 0x02, "eojcc": 0x7D, "instance": 0x1F}
+        device_instance = {
+            "ip": "192.168.0.2", 
+            "eojgc": 0x02, 
+            "eojcc": 0x7D, 
+            "instance": 0x1F,
+            "capacity_kwh": 12.7  # Required for BatteryDevicePoller
+        }
 
         api_client = MagicMock()
         api_client._state = {}
@@ -45,7 +51,13 @@ class TestBatterySOCParsing:
     @pytest.mark.asyncio
     async def test_battery_polling_handles_timeout(self):
         """Test that polling continues despite timeouts and falls back to working EPC."""
-        device_instance = {"ip": "192.168.0.2", "eojgc": 0x02, "eojcc": 0x7D, "instance": 0x1F}
+        device_instance = {
+            "ip": "192.168.0.2", 
+            "eojgc": 0x02, 
+            "eojcc": 0x7D, 
+            "instance": 0x1F,
+            "capacity_kwh": 12.7  # Required for BatteryDevicePoller
+        }
         api_client = MagicMock()
         poller = BatteryDevicePoller(device_instance, api_client)
 

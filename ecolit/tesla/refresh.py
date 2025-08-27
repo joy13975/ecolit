@@ -21,7 +21,9 @@ async def refresh_user_token(tesla_config, config, config_path):
     refresh_token = tesla_config.get("refresh_token")
     client_id = tesla_config.get("client_id")
     client_secret = tesla_config.get("client_secret")
-    auth_endpoint = tesla_config.get("auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token")
+    auth_endpoint = tesla_config.get(
+        "auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+    )
 
     if not refresh_token:
         print("❌ No refresh_token found - run 'make tesla-mint' first")
@@ -84,9 +86,11 @@ async def verify_partner_registration(tesla_config):
     """Verify and re-register partner account if needed."""
     client_id = tesla_config.get("client_id")
     client_secret = tesla_config.get("client_secret")
-    auth_endpoint = tesla_config.get("auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token")
+    auth_endpoint = tesla_config.get(
+        "auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+    )
     partner_domain = tesla_config.get("partner_domain")
-    
+
     if not partner_domain:
         print("❌ No partner_domain configured in tesla config")
         print("💡 Add 'partner_domain: your-domain.com' to tesla config")
@@ -96,12 +100,15 @@ async def verify_partner_registration(tesla_config):
     print("🔐 Verifying Fleet API partner registration...")
 
     # Get Fleet API endpoints from config
-    fleet_endpoints = tesla_config.get("fleet_api_endpoints", {
-        "na": "https://fleet-api.prd.na.vn.cloud.tesla.com",
-        "eu": "https://fleet-api.prd.eu.vn.cloud.tesla.com", 
-        "ap": "https://fleet-api.prd.ap.vn.cloud.tesla.com"
-    })
-    
+    fleet_endpoints = tesla_config.get(
+        "fleet_api_endpoints",
+        {
+            "na": "https://fleet-api.prd.na.vn.cloud.tesla.com",
+            "eu": "https://fleet-api.prd.eu.vn.cloud.tesla.com",
+            "ap": "https://fleet-api.prd.ap.vn.cloud.tesla.com",
+        },
+    )
+
     # Determine region and endpoints
     region = tesla_config.get("region", "auto")
     if region == "auto":
@@ -187,8 +194,7 @@ async def verify_partner_registration(tesla_config):
 
 async def refresh_tesla_tokens():
     """Main function: refresh user tokens and verify partner registration."""
-    project_root = Path(__file__).parent.parent
-    config_path = project_root / "config.yaml"
+    config_path = Path.cwd() / "config.yaml"
 
     if not config_path.exists():
         print("❌ config.yaml not found")

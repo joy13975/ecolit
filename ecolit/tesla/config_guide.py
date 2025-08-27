@@ -5,13 +5,10 @@ from pathlib import Path
 
 import yaml
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-
 
 def show_config_guide():
     """Show how to configure Tesla vehicle ID and tag."""
-    config_path = project_root / "config.yaml"
+    config_path = Path.cwd() / "config.yaml"
 
     print("🚗 Tesla Vehicle Configuration Guide")
     print("=" * 50)

@@ -7,6 +7,7 @@ from typing import NoReturn
 from ecolit.config import load_config
 from ecolit.core import EcoliteManager
 
+
 class ConditionalFormatter(logging.Formatter):
     def format(self, record):
         if record.levelno >= logging.DEBUG and record.levelno < logging.INFO:
@@ -17,12 +18,9 @@ class ConditionalFormatter(logging.Formatter):
             self._style._fmt = "%(asctime)s %(message)s"
         return super().format(record)
 
+
 logging.basicConfig(
-    level=logging.INFO,
-    datefmt="%m-%d %H:%M:%S",
-    handlers=[
-        logging.StreamHandler()
-    ]
+    level=logging.INFO, datefmt="%m-%d %H:%M:%S", handlers=[logging.StreamHandler()]
 )
 
 # Apply custom formatter to root logger

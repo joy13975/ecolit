@@ -7,16 +7,12 @@ from pathlib import Path
 
 import yaml
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from ecolit.charging.tesla_api import TeslaAPIClient
 
 
 async def test_tesla_api():
     """Test Tesla API with safe read-only operations."""
-    config_path = project_root / "config.yaml"
+    config_path = Path.cwd() / "config.yaml"
 
     if not config_path.exists():
         print("❌ config.yaml not found")
