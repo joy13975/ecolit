@@ -42,7 +42,7 @@ async def discover_vehicles():
     print("🔐 Authenticating with Tesla API...")
 
     # Get access token using Fleet API authentication
-    auth_url = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+    auth_endpoint = tesla_config.get("auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token")
     auth_data = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
@@ -54,7 +54,7 @@ async def discover_vehicles():
         async with aiohttp.ClientSession() as session:
             # Authenticate using form data (not JSON)
             async with session.post(
-                auth_url, 
+                auth_endpoint, 
                 data=auth_data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"}
             ) as response:
@@ -73,13 +73,20 @@ async def discover_vehicles():
                 "Content-Type": "application/json",
             }
 
+            # Get Fleet API endpoints from config
+            fleet_endpoints = tesla_config.get("fleet_api_endpoints", {
+                "na": "https://fleet-api.prd.na.vn.cloud.tesla.com",
+                "eu": "https://fleet-api.prd.eu.vn.cloud.tesla.com", 
+                "ap": "https://fleet-api.prd.ap.vn.cloud.tesla.com"
+            })
+            
             # Determine Fleet API region from refresh token
             if refresh_token.startswith("EU_"):
-                api_endpoint = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
+                api_endpoint = fleet_endpoints["eu"]
             elif refresh_token.startswith("AP_"):
-                api_endpoint = "https://fleet-api.prd.ap.vn.cloud.tesla.com"
+                api_endpoint = fleet_endpoints["ap"]
             else:
-                api_endpoint = "https://fleet-api.prd.na.vn.cloud.tesla.com"
+                api_endpoint = fleet_endpoints["na"]
 
             # Use Fleet API vehicles endpoint
             vehicles_url = f"{api_endpoint}/api/1/vehicles"

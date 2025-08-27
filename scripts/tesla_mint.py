@@ -65,35 +65,42 @@ async def register_partner_account(tesla_config, access_token):
     """Register partner account with Tesla Fleet API."""
     client_id = tesla_config.get("client_id")
     client_secret = tesla_config.get("client_secret")
+    auth_endpoint = tesla_config.get("auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token")
+    partner_domain = tesla_config.get("partner_domain")
+    
+    if not partner_domain:
+        print("❌ No partner_domain configured in tesla config")
+        print("💡 Add 'partner_domain: your-domain.com' to tesla config")
+        return False
 
     print("\n" + "=" * 50)
     print("🔐 Getting partner token for Fleet API registration...")
 
+    # Get Fleet API endpoints from config
+    fleet_endpoints = tesla_config.get("fleet_api_endpoints", {
+        "na": "https://fleet-api.prd.na.vn.cloud.tesla.com",
+        "eu": "https://fleet-api.prd.eu.vn.cloud.tesla.com", 
+        "ap": "https://fleet-api.prd.ap.vn.cloud.tesla.com"
+    })
+    
     # Determine region and endpoints
     region = tesla_config.get("region", "auto")
     if region == "auto":
         # Auto-detect from existing refresh token
         existing_token = tesla_config.get("refresh_token", "")
         if existing_token.startswith("EU_"):
-            audience = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
-            api_endpoint = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
+            audience = fleet_endpoints["eu"]
+            api_endpoint = fleet_endpoints["eu"]
         elif existing_token.startswith("AP_"):
-            audience = "https://fleet-api.prd.ap.vn.cloud.tesla.com"
-            api_endpoint = "https://fleet-api.prd.ap.vn.cloud.tesla.com"
+            audience = fleet_endpoints["ap"]
+            api_endpoint = fleet_endpoints["ap"]
         else:
-            audience = "https://fleet-api.prd.na.vn.cloud.tesla.com"
-            api_endpoint = "https://fleet-api.prd.na.vn.cloud.tesla.com"
+            audience = fleet_endpoints["na"]
+            api_endpoint = fleet_endpoints["na"]
     else:
         # Use configured region
-        if region == "eu":
-            audience = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
-            api_endpoint = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
-        elif region == "ap":
-            audience = "https://fleet-api.prd.ap.vn.cloud.tesla.com"
-            api_endpoint = "https://fleet-api.prd.ap.vn.cloud.tesla.com"
-        else:
-            audience = "https://fleet-api.prd.na.vn.cloud.tesla.com"
-            api_endpoint = "https://fleet-api.prd.na.vn.cloud.tesla.com"
+        api_endpoint = fleet_endpoints.get(region, fleet_endpoints["na"])
+        audience = api_endpoint
 
     # Get partner token (client credentials)
     token_data = {
@@ -107,7 +114,7 @@ async def register_partner_account(tesla_config, access_token):
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(
-                "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token",
+                auth_endpoint,
                 data=token_data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             ) as response:
@@ -129,10 +136,9 @@ async def register_partner_account(tesla_config, access_token):
             return False
 
         # Register partner account with domain
-        domain = "joy13975.github.io"  # From documentation
-        print(f"🏢 Registering partner account with domain: {domain}")
+        print(f"🏢 Registering partner account with domain: {partner_domain}")
 
-        registration_data = {"domain": domain}
+        registration_data = {"domain": partner_domain}
 
         try:
             async with session.post(
@@ -184,6 +190,8 @@ async def mint_tesla_tokens():
 
     client_id = tesla_config.get("client_id")
     client_secret = tesla_config.get("client_secret")
+    auth_endpoint = tesla_config.get("auth_endpoint", "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token")
+    oauth_authorize_endpoint = tesla_config.get("oauth_authorize_endpoint", "https://auth.tesla.com/oauth2/v3/authorize")
 
     if not all([client_id, client_secret]):
         print("❌ Tesla API credentials not configured")
@@ -237,7 +245,7 @@ async def mint_tesla_tokens():
 
             # Step 2: Open browser for OAuth authorization
             auth_url = (
-                f"https://auth.tesla.com/oauth2/v3/authorize"
+                f"{oauth_authorize_endpoint}"
                 f"?response_type=code"
                 f"&client_id={client_id}"
                 f"&redirect_uri={urllib.parse.quote(redirect_uri)}"
@@ -297,7 +305,7 @@ async def mint_tesla_tokens():
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(
-                "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token",
+                auth_endpoint,
                 data=token_data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             ) as response:
