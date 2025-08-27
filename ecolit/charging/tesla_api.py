@@ -481,6 +481,90 @@ class TeslaAPIClient:
             logger.error(f"Failed to set Tesla charge limit: {e}")
             return False
 
+    async def wake_up(self) -> bool:
+        """Wake up a sleeping Tesla vehicle."""
+        if not self.enabled:
+            return False
+
+        try:
+            await self._ensure_authenticated()
+            await self._rate_limit_check()
+
+            # Wake_up is NOT a command endpoint - it's a direct endpoint
+            url = f"{self.base_url}/api/1/vehicles/{self.vehicle_tag}/wake_up"
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json",
+            }
+
+            async with self.session.post(url, headers=headers) as response:
+                result = await response.json()
+                
+                if response.status == 200:
+                    logger.info("Tesla vehicle wake_up command sent successfully")
+                    return True
+                else:
+                    logger.error(f"Tesla wake_up failed: {response.status} - {result}")
+                    return False
+
+        except Exception as e:
+            logger.error(f"Failed to wake Tesla vehicle: {e}")
+            return False
+
+    async def poll_vehicle_data_with_wake_option(self) -> tuple[TeslaVehicleData, bool]:
+        """
+        Poll vehicle data and return data plus whether vehicle was sleeping.
+        Returns (vehicle_data, is_sleeping).
+        """
+        if not self.enabled or not self.vehicle_tag:
+            return TeslaVehicleData(), False
+
+        try:
+            await self._ensure_authenticated()
+
+            url = f"{self.base_url}/api/1/vehicles/{self.vehicle_tag}/vehicle_data"
+            headers = {
+                "Authorization": f"Bearer {self.access_token}",
+                "Content-Type": "application/json",
+            }
+
+            async with self.session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    vehicle_data = result.get("response", {})
+
+                    # Extract relevant data
+                    charge_state = vehicle_data.get("charge_state", {})
+
+                    # Update our data structure
+                    new_data = TeslaVehicleData(
+                        battery_level=charge_state.get("battery_level"),
+                        charging_power=charge_state.get("charger_power"),
+                        charge_amps=charge_state.get("charge_current_request"),
+                        charging_state=charge_state.get("charging_state"),
+                        charge_port_status=charge_state.get("charge_port_door_open"),
+                        timestamp=datetime.now(),
+                    )
+
+                    # Cache the polled data
+                    self.vehicle_data = new_data
+                    return new_data, False
+
+                elif response.status == 408:
+                    # Vehicle is sleeping/offline
+                    error_text = await response.text()
+                    logger.info(f"Vehicle sleeping: {error_text}")
+                    return TeslaVehicleData(), True
+                
+                else:
+                    error_text = await response.text()
+                    logger.warning(f"Tesla vehicle polling failed: {response.status} - {error_text}")
+                    return TeslaVehicleData(), False
+
+        except Exception as e:
+            logger.error(f"Tesla polling error: {e}")
+            return TeslaVehicleData(), False
+
     def is_enabled(self) -> bool:
         """Check if Tesla API client is enabled."""
         return self.enabled

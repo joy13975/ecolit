@@ -14,6 +14,68 @@ sys.path.insert(0, str(project_root))
 from ecolit.charging.tesla_api import TeslaAPIClient
 
 
+async def _poll_vehicle_data_with_wake_option(client):
+    """Poll vehicle data with option to wake if vehicle is sleeping."""
+    print()
+    print("🔄 Polling vehicle data...")
+    
+    # Use the new method that specifically handles sleeping vehicles
+    vehicle_data, is_sleeping = await client.poll_vehicle_data_with_wake_option()
+    
+    if vehicle_data.timestamp:
+        print("🚗 Recent Vehicle Data:")
+        if vehicle_data.battery_level is not None:
+            print(f"  Battery Level: {vehicle_data.battery_level}%")
+        if vehicle_data.charging_power is not None:
+            print(f"  Charging Power: {vehicle_data.charging_power}kW")
+        if vehicle_data.charge_amps is not None:
+            print(f"  Charging Amps: {vehicle_data.charge_amps}A")
+        if vehicle_data.charge_port_status:
+            print(f"  Charge Port: {vehicle_data.charge_port_status}")
+        print(f"  Last Update: {vehicle_data.timestamp}")
+        
+    elif is_sleeping:
+        print("😴 Vehicle is sleeping or offline.")
+        response = input("Would you like to wake the vehicle to get current readings? (y/N): ").lower().strip()
+        
+        if response in ['y', 'yes']:
+            print("⏰ Sending wake command to vehicle...")
+            try:
+                wake_success = await client.wake_up()
+                if wake_success:
+                    print("✅ Wake command sent successfully")
+                    print("⏳ Waiting for vehicle to wake up (this may take 10-30 seconds)...")
+                    
+                    # Wait a bit for vehicle to wake up and retry
+                    import asyncio
+                    await asyncio.sleep(15)  # Give vehicle time to wake up
+                    
+                    print("🔄 Retrying vehicle data poll...")
+                    vehicle_data, _ = await client.poll_vehicle_data_with_wake_option()
+                    if vehicle_data.timestamp:
+                        print("🚗 Vehicle Data (after wake):")
+                        if vehicle_data.battery_level is not None:
+                            print(f"  Battery Level: {vehicle_data.battery_level}%")
+                        if vehicle_data.charging_power is not None:
+                            print(f"  Charging Power: {vehicle_data.charging_power}kW")
+                        if vehicle_data.charge_amps is not None:
+                            print(f"  Charging Amps: {vehicle_data.charge_amps}A")
+                        if vehicle_data.charge_port_status:
+                            print(f"  Charge Port: {vehicle_data.charge_port_status}")
+                        print(f"  Last Update: {vehicle_data.timestamp}")
+                    else:
+                        print("⚠️  Vehicle may still be waking up. Try again in a few minutes.")
+                else:
+                    print("❌ Failed to send wake command")
+            except Exception as wake_e:
+                print(f"❌ Error waking vehicle: {wake_e}")
+        else:
+            print("💤 Vehicle left sleeping")
+    else:
+        print("ℹ️  No recent telemetry data available")
+        print("   (This is normal if vehicle is sleeping or offline)")
+
+
 async def list_tesla_products():
     """List Tesla products and test API connectivity."""
     config_path = project_root / "config.yaml"
@@ -58,39 +120,7 @@ async def list_tesla_products():
                 print(f"  {key}: {value}")
 
             # Get vehicle data if available
-            try:
-                print()
-                print("🔄 Polling vehicle data...")
-
-                vehicle_data = await client.poll_vehicle_data()
-                if vehicle_data.timestamp:
-                    print("🚗 Recent Vehicle Data:")
-                    if vehicle_data.battery_level is not None:
-                        print(f"  Battery Level: {vehicle_data.battery_level}%")
-                    if vehicle_data.charging_power is not None:
-                        print(f"  Charging Power: {vehicle_data.charging_power}kW")
-                    if vehicle_data.charge_amps is not None:
-                        print(f"  Charging Amps: {vehicle_data.charge_amps}A")
-                    if vehicle_data.charge_port_status:
-                        print(f"  Charge Port: {vehicle_data.charge_port_status}")
-                    print(f"  Last Update: {vehicle_data.timestamp}")
-                else:
-                    print("ℹ️  No recent telemetry data available")
-                    print("   (This is normal if vehicle is sleeping or offline)")
-            except Exception as e:
-                print(f"⚠️  Could not retrieve vehicle data: {e}")
-                if "must be registered" in str(e):
-                    print()
-                    print("💡 Tesla Fleet API Registration Required:")
-                    print(
-                        "   Tesla now requires all API access to go through Fleet API registration"
-                    )
-                    print(
-                        "   This requires a domain, hosted public key, and business application approval"
-                    )
-                    print(
-                        "   See: https://developer.tesla.com/docs/fleet-api/endpoints/partner-endpoints#register"
-                    )
+            await _poll_vehicle_data_with_wake_option(client)
 
     except Exception as e:
         print(f"❌ Tesla API error: {e}")
