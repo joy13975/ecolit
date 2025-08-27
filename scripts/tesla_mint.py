@@ -12,6 +12,7 @@ This is a one-time setup. Use tesla_refresh.py for ongoing token refresh.
 import asyncio
 import http.server
 import socketserver
+import subprocess
 import sys
 import threading
 import urllib.parse
@@ -204,8 +205,22 @@ async def mint_tesla_tokens():
     print("🚀 Starting Tesla complete setup (OAuth + Fleet API registration)...")
     print("📋 Scopes requested:", ", ".join(scopes))
 
-    # Step 1: Start localhost OAuth callback server
+    # Step 1: Kill any existing process on port 8750
     PORT = 8750
+    print(f"🔧 Checking if port {PORT} is in use...")
+
+    # Kill any process using the port
+    try:
+        # Find process using the port
+        result = subprocess.run(f"lsof -ti:{PORT}", shell=True, capture_output=True, text=True)
+        if result.stdout.strip():
+            pids = result.stdout.strip().split("\n")
+            for pid in pids:
+                subprocess.run(f"kill -9 {pid}", shell=True, capture_output=True)
+            print(f"✅ Cleared port {PORT} (killed process {', '.join(pids)})")
+    except Exception:
+        pass  # Port might not be in use, which is fine
+
     print(f"🌐 Starting callback server on http://localhost:{PORT}/callback")
 
     try:
@@ -224,6 +239,7 @@ async def mint_tesla_tokens():
                 f"&client_id={client_id}"
                 f"&redirect_uri={urllib.parse.quote(redirect_uri)}"
                 f"&scope={urllib.parse.quote(scope_string)}"
+                f"&prompt=consent"
             )
 
             print("\n🔐 Opening Tesla OAuth authorization in browser...")
@@ -257,8 +273,9 @@ async def mint_tesla_tokens():
 
     except OSError as e:
         if "Address already in use" in str(e):
-            print(f"❌ Port {PORT} is already in use")
-            print("💡 Stop any other applications using this port and try again")
+            print(f"❌ Port {PORT} is still in use after cleanup attempt")
+            print("💡 Try running 'lsof -i :8750' to find the process")
+            print("💡 Or wait a moment and try again")
         else:
             print(f"❌ Server error: {e}")
         return False
