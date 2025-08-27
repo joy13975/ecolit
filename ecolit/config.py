@@ -43,6 +43,10 @@ def load_config(config_path: str | None = None) -> dict[str, Any]:
             },
             "adjustment_interval": 30,
             "measurement_interval": 10,
+            "amp_adjustments": {
+                "increase_step": 1,  # Amps to increase when conditions allow
+                "decrease_step": 2,  # Amps to decrease when limiting needed
+            },
         },
         "tesla": {
             "enabled": False,

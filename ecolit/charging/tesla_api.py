@@ -39,7 +39,6 @@ class TeslaAPIClient:
             return
 
         # Authentication configuration
-        self.fleet_api_key = config.get("fleet_api_key")
         self.refresh_token = config.get("refresh_token")
         self.client_id = config.get("client_id")
         self.client_secret = config.get("client_secret")

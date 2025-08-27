@@ -59,6 +59,11 @@ ev_charging:
   # Rate limiting
   adjustment_interval: 30     # Seconds between amp adjustments  
   measurement_interval: 10    # Seconds between measurements
+  
+  # Amp adjustment settings - control how aggressively charging responds to conditions
+  amp_adjustments:
+    increase_step: 1          # Amps to increase when conditions allow more charging
+    decrease_step: 2          # Amps to decrease when limiting is needed
 
 # Tesla Integration (Optional - for future Tesla API integration)
 tesla:

@@ -1,4 +1,4 @@
-.PHONY: help install dev test lint format run scan clean shell sync add upgrade stop test-tesla tesla-list tesla-discover tesla-config
+.PHONY: help install dev test lint format run scan clean shell sync add upgrade stop test-tesla tesla-list tesla-discover tesla-config tesla-mint tesla-refresh
 
 help:
 	@echo "Available commands:"
@@ -9,6 +9,8 @@ help:
 	@echo "  make tesla-list     - List registered Tesla products (SAFE: read-only)"
 	@echo "  make tesla-discover - Discover your Tesla vehicles and get config values"
 	@echo "  make tesla-config   - Show manual configuration guide for vehicle ID/tag"
+	@echo "  make tesla-mint     - Complete initial Tesla setup (OAuth + registration)"
+	@echo "  make tesla-refresh  - Refresh tokens and verify registration (ongoing)"
 	@echo "  make lint        - Run ruff linter"
 	@echo "  make format      - Format code with ruff"
 	@echo "  make run         - Run the main application"
@@ -93,3 +95,11 @@ tesla-discover:
 tesla-config:
 	@echo "Tesla configuration guide..."
 	@uv run python scripts/tesla_config_guide.py
+
+tesla-mint:
+	@echo "Starting complete Tesla setup (OAuth + registration)..."
+	@uv run python scripts/tesla_mint.py
+
+tesla-refresh:
+	@echo "Refreshing Tesla tokens and verifying registration..."
+	@uv run python scripts/tesla_refresh.py

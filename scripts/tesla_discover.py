@@ -116,7 +116,6 @@ async def discover_vehicles():
                         print("  enabled: true")
                         print("  ")
                         print("  # Fleet API Authentication (keep your existing values)")
-                        print("  fleet_api_key: <your_existing_key>")
                         print("  refresh_token: <your_existing_token>")
                         print("  client_id: <your_existing_client_id>")
                         print("  client_secret: <your_existing_client_secret>")

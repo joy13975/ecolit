@@ -25,6 +25,11 @@ class ChargingPolicy(ABC):
         """Initialize policy with configuration."""
         self.config = config
         self.max_amps = config.get("max_amps", 20)
+        
+        # Amp adjustment settings
+        amp_adjustments = config.get("amp_adjustments", {})
+        self.increase_step = amp_adjustments.get("increase_step", 1)
+        self.decrease_step = amp_adjustments.get("decrease_step", 2)
 
     @abstractmethod
     def calculate_target_amps(self, current_amps: int, metrics: EnergyMetrics) -> int:
@@ -63,13 +68,13 @@ class EcoPolicy(ChargingPolicy):
         # Grid export is negative, import is positive
         if metrics.grid_power_flow < -self.export_threshold:
             # Exporting > threshold - can increase charging
-            target_amps = current_amps + 1
+            target_amps = current_amps + self.increase_step
             logger.debug(
                 f"ECO: Exporting {abs(metrics.grid_power_flow)}W > {self.export_threshold}W, increase to {target_amps}A"
             )
         elif metrics.grid_power_flow >= 0:
             # Not exporting (importing or balanced) - decrease charging
-            target_amps = current_amps - 2
+            target_amps = current_amps - self.decrease_step
             logger.debug(
                 f"ECO: Grid flow {metrics.grid_power_flow}W ≥ 0, decrease to {target_amps}A"
             )
@@ -104,19 +109,19 @@ class HurryPolicy(ChargingPolicy):
 
         if metrics.grid_power_flow < -self.export_threshold:
             # Exporting > threshold - can increase charging
-            target_amps = current_amps + 1
+            target_amps = current_amps + self.increase_step
             logger.debug(
                 f"HURRY: Exporting {abs(metrics.grid_power_flow)}W > {self.export_threshold}W, increase to {target_amps}A"
             )
         elif metrics.grid_power_flow <= self.max_import:
             # Importing but within limit - can still increase (but more cautiously)
-            target_amps = current_amps + 1
+            target_amps = current_amps + self.increase_step
             logger.debug(
                 f"HURRY: Grid flow {metrics.grid_power_flow}W ≤ {self.max_import}W limit, increase to {target_amps}A"
             )
         else:
             # Importing too much - decrease charging
-            target_amps = current_amps - 2
+            target_amps = current_amps - self.decrease_step
             logger.debug(
                 f"HURRY: Importing {metrics.grid_power_flow}W > {self.max_import}W limit, decrease to {target_amps}A"
             )
