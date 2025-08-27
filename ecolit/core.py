@@ -360,12 +360,12 @@ class EcoliteManager:
                 battery_data = await self.battery_poller.poll_battery_data()
                 official_soc = battery_data.get("battery_soc")  # Official SoC reading
                 battery_power = battery_data.get("battery_power")
-                
+
                 # Use real-time SoC estimate if available and confident
                 realtime_soc = battery_data.get("realtime_soc")
                 soc_confidence = battery_data.get("soc_confidence", 0.0)
                 soc_source = battery_data.get("soc_source", "unknown")
-                
+
                 # Use real-time estimate if confidence > 0.6, otherwise use official
                 if realtime_soc is not None and soc_confidence > 0.6:
                     battery_soc = realtime_soc
@@ -393,27 +393,29 @@ class EcoliteManager:
                 # Battery SOC - ALWAYS show both official and real-time
                 if battery_soc is not None:
                     if realtime_soc is not None and battery_data:
-                        # Show both official and real-time SoC values
-                        soc_display = f"HomeSOC:{official_soc:.1f}%|RT:{realtime_soc:.2f}%"
-                        
                         # Add charging rate if available
                         charging_info = battery_data.get("charging_rate_pct_per_hour", 0)
+                        rt_charging_txt = ""
                         if abs(charging_info) > 0.1:
-                            soc_display += f"({charging_info:+.1f}%/h)"
+                            rt_charging_txt = f"@{charging_info:+.1f}%/h"
+                        # Show both official and real-time SoC values
+                        soc_display = (
+                            f"HomeSOC:{official_soc:.1f}% (RT:{realtime_soc:.2f}%{rt_charging_txt})"
+                        )
                     else:
                         # Fallback to single SoC value
                         soc_display = f"HomeSOC:{battery_soc:.1f}%"
-                    
+
                     essential_stats.append(soc_display)
 
                 # Battery power flow (+ charging, - discharging)
                 if battery_power is not None:
                     if battery_power > 0:
-                        essential_stats.append(f"Bat:+{battery_power}W")
+                        essential_stats.append(f"HomeCharging:+{battery_power}W")
                     elif battery_power < 0:
-                        essential_stats.append(f"Bat:{battery_power}W")
+                        essential_stats.append(f"HomeCharging:{battery_power}W")
                     else:
-                        essential_stats.append("Bat:0W")
+                        essential_stats.append("HomeCharging:0W")
 
                 # Grid power flow (+ import, - export)
                 if grid_power_flow is not None:
@@ -445,9 +447,11 @@ class EcoliteManager:
                             "battery_soc_realtime": battery_data.get("realtime_soc"),
                             "battery_soc_confidence": battery_data.get("soc_confidence"),
                             "battery_soc_source": battery_data.get("soc_source"),
-                            "battery_charging_rate_pct_per_hour": battery_data.get("charging_rate_pct_per_hour"),
+                            "battery_charging_rate_pct_per_hour": battery_data.get(
+                                "charging_rate_pct_per_hour"
+                            ),
                         }
-                    
+
                     self.metrics_logger.log_metrics(
                         battery_soc=official_soc,  # Log official SoC separately
                         battery_power=battery_power,
