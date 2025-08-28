@@ -85,6 +85,9 @@ tesla:
   max_charging_amps: 32        # Maximum charging current
   charging_voltage: 200        # EV charging voltage
   
+  # Wall Connector Configuration (optional)
+  wall_connector_ip: null      # IP address of Tesla Wall Connector Gen 3
+  
   # Optional: Advanced settings
   region: "auto"               # Tesla region: "auto", "na", "eu", "cn"
   command_rate_limit: 5        # Commands per minute

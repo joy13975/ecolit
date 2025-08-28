@@ -30,9 +30,10 @@ The following configuration sections are actively used by the current implementa
 - **Rate limiting**: Amp adjustment intervals and steps
 - **Logging**: Output levels and file rotation
 
-### Future Implementation Settings
-The following configuration sections are prepared for future features:
+### Tesla Integration Settings  
+The following configuration sections are used for Tesla features:
 - **Tesla API integration**: Refresh tokens and vehicle settings
+- **Wall Connector**: IP address for Gen 3 Wall Connector monitoring
 - **Complex algorithms**: Advanced battery coordination thresholds
 
 ## Operating Modes Explained
