@@ -201,7 +201,7 @@ class TeslaAPIClient:
             new_data = TeslaVehicleData(
                 battery_level=charge_state.get("battery_level"),
                 charging_power=charge_state.get("charger_power"),
-                charge_amps=charge_state.get("charge_current_request"),
+                charge_amps=charge_state.get("charger_actual_current"),
                 charging_state=charge_state.get("charging_state"),
                 charge_port_status=charge_state.get("charge_port_door_open"),
                 timestamp=datetime.now(),
@@ -426,6 +426,106 @@ class TeslaAPIClient:
     def is_enabled(self) -> bool:
         """Check if Tesla API client is enabled."""
         return self.enabled
+
+    async def get_charging_history(self, limit: int = 10) -> dict[str, Any]:
+        """Get recent charging history from Tesla Fleet API.
+        
+        Args:
+            limit: Number of charging sessions to retrieve (default 10)
+            
+        Returns:
+            Dict containing charging history data or empty dict if error
+        """
+        if not self.enabled or not self.api:
+            return {}
+
+        try:
+            # Use the tesla-fleet-api library's charging history endpoint
+            # This should correspond to GET /api/1/dx/charging/history
+            result = await self.api.charging.history(limit=limit)
+            
+            if result and "data" in result:
+                logger.info(f"Retrieved {len(result['data'])} charging history entries")
+                return result
+            else:
+                logger.warning("No charging history data returned")
+                return {}
+
+        except Exception as e:
+            logger.error(f"Failed to get Tesla charging history: {e}")
+            return {}
+
+    async def get_energy_sites(self) -> dict[str, Any]:
+        """Get list of Tesla energy sites (Powerwall, Solar, Wall Connector).
+        
+        Returns:
+            Dict containing energy sites data or empty dict if error
+        """
+        if not self.enabled or not self.api:
+            return {}
+
+        try:
+            # Use the products endpoint to get all Tesla products including energy sites
+            result = await self.api.products()
+            
+            if result and "response" in result:
+                products = result["response"]
+                # Filter for energy products (sites)
+                energy_sites = [p for p in products if "energy_site_id" in p]
+                logger.info(f"Retrieved {len(energy_sites)} energy sites from {len(products)} total products")
+                return {"response": energy_sites}
+            else:
+                logger.warning("No products data returned")
+                return {}
+
+        except Exception as e:
+            logger.error(f"Failed to get Tesla energy sites: {e}")
+            return {}
+
+    async def get_wall_connector_live_status(self, energy_site_id: int = None) -> dict[str, Any]:
+        """Get live Wall Connector status from Tesla Fleet API.
+        
+        Args:
+            energy_site_id: Energy site ID. If None, will try to find first available site.
+            
+        Returns:
+            Dict containing Wall Connector live status or empty dict if error
+        """
+        if not self.enabled or not self.api:
+            return {}
+
+        # If no site ID provided, try to get the first energy site
+        if energy_site_id is None:
+            sites_data = await self.get_energy_sites()
+            if not sites_data or "response" not in sites_data:
+                logger.error("No energy sites found")
+                return {}
+            
+            sites = sites_data["response"]
+            if not sites:
+                logger.error("No energy sites available")
+                return {}
+            
+            energy_site_id = sites[0]["energy_site_id"]
+            logger.info(f"Using energy site ID: {energy_site_id}")
+
+        try:
+            # Create an EnergySite instance with correct parameters
+            site = self.api.energySites.Site(self.api, energy_site_id)
+            result = await site.live_status()
+            
+            if result and "response" in result:
+                live_data = result["response"]
+                wall_connectors = live_data.get("wall_connectors", [])
+                logger.info(f"Retrieved live status for {len(wall_connectors)} wall connectors")
+                return result
+            else:
+                logger.warning("No live status data returned")
+                return {}
+
+        except Exception as e:
+            logger.error(f"Failed to get Wall Connector live status: {e}")
+            return {}
 
     def is_connected(self) -> bool:
         """Check if API client is connected."""

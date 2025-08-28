@@ -13,7 +13,6 @@ from ecolit.tesla.utils import (
     ensure_vehicle_awake_for_command,
     prompt_yes_no,
 )
-from ecolit.tesla.wall_connector import WallConnectorClient, format_wall_connector_status
 
 
 def format_charging_schedule(schedule_data: dict) -> str:
@@ -178,7 +177,7 @@ async def get_vehicle_status_with_wake_option(client: TeslaAPIClient) -> bool:
     return await ensure_vehicle_awake_for_command(client, "get current data")
 
 
-async def show_current_status(client: TeslaAPIClient, wall_connector_ip: str = None):
+async def show_current_status(client: TeslaAPIClient):
     """Display current vehicle charging status and Wall Connector status."""
     print("\n" + "=" * 60)
     print("🚗 CURRENT TESLA VEHICLE STATUS")
@@ -226,28 +225,64 @@ async def show_current_status(client: TeslaAPIClient, wall_connector_ip: str = N
     else:
         print("⚠️  Vehicle may still be waking up. Try again in a few minutes.")
 
-    # Get Wall Connector status
+    # Get Wall Connector status from Tesla Fleet API (authoritative data)
     print("\n🔌 WALL CONNECTOR STATUS:")
     print("-" * 30)
-
-    if wall_connector_ip:
-        try:
-            wc_client = WallConnectorClient(wall_connector_ip)
-            vitals = await wc_client.get_vitals()
-            lifetime = await wc_client.get_lifetime()
-
-            if vitals:
-                status = format_wall_connector_status(vitals, lifetime)
-                print(status)
+    try:
+        live_status = await client.get_wall_connector_live_status()
+        if live_status and "response" in live_status:
+            live_data = live_status["response"]
+            wall_connectors = live_data.get("wall_connectors", [])
+            
+            if wall_connectors:
+                for i, wc in enumerate(wall_connectors):
+                    wc_power = wc.get("wall_connector_power", 0)
+                    wc_state = wc.get("wall_connector_state", "unknown")
+                    
+                    # Map Tesla Fleet API wall connector states to human-readable names
+                    # Based on community research and Tesla behavior patterns
+                    fleet_state_map = {
+                        1: "Standby",
+                        2: "Vehicle Detected", 
+                        3: "Ready to Charge",
+                        4: "Vehicle Connected (Not Charging)",
+                        5: "Sleep Mode",
+                        9: "Vehicle Connected (Waiting)",
+                        10: "Charging Starting",
+                        11: "Charging",
+                        12: "Charging Stopping", 
+                        13: "Charging Complete",
+                        14: "Vehicle Connected (Scheduled)"
+                    }
+                    
+                    state_name = fleet_state_map.get(wc_state, f"Unknown State ({wc_state})")
+                    
+                    # Format Wall Connector status
+                    if wc_power > 50:  # Active power consumption
+                        print(f"⚡ Wall Connector {i+1}: {wc_power:.0f}W")
+                        if wc_power > 500:
+                            print(f"   🔋 Battery conditioning/trickle charging")
+                        else:
+                            print(f"   ⏸️  Standby power consumption")
+                    else:
+                        print(f"🔌 Wall Connector {i+1}: {wc_power:.0f}W")
+                        
+                    print(f"   📊 Status: {state_name}")
+                    
             else:
-                print("❌ Could not connect to Wall Connector")
-                print(f"   IP: {wall_connector_ip}")
-                print("   Check that Wall Connector is online and accessible")
-        except Exception as e:
-            print(f"❌ Wall Connector error: {e}")
-    else:
-        print("ℹ️  Wall Connector not configured")
-        print("   Set wall_connector_ip in config.yaml to enable monitoring")
+                print("ℹ️  No Wall Connectors found in energy site")
+                # Show other site power data for context
+                site_power = live_data.get("load_power", 0)
+                solar_power = live_data.get("solar_power", 0)
+                grid_power = live_data.get("grid_power", 0)
+                if any([site_power, solar_power, grid_power]):
+                    print(f"🏠 Site Power - Load: {site_power}W, Solar: {solar_power}W, Grid: {grid_power}W")
+        else:
+            print("❌ No Tesla energy site data available")
+            print("   Ensure energy_device_data scope is granted and energy site is registered")
+    except Exception as e:
+        print(f"❌ Tesla Fleet API error: {e}")
+        print("   Check that Tesla API token has energy_device_data scope")
 
 
 async def set_charging_amps_interactive(client: TeslaAPIClient):
@@ -331,16 +366,13 @@ async def set_charging_amps_interactive(client: TeslaAPIClient):
             print(f"\n❌ Unexpected error: {e}")
 
 
-async def main_menu(client: TeslaAPIClient, wall_connector_ip: str = None):
+async def main_menu(client: TeslaAPIClient):
     """Main interactive menu."""
     while True:
         print("\n" + "=" * 60)
         print("🚗 TESLA CHARGING CONTROL")
         print("=" * 60)
-        if wall_connector_ip:
-            print("1. Show current status (vehicle, schedule & Wall Connector)")
-        else:
-            print("1. Show current status (schedule & amp configuration)")
+        print("1. Show current status (vehicle, schedule & Wall Connector)")
         print("2. Set charging amperage")
         print("3. Exit")
         print()
@@ -349,7 +381,7 @@ async def main_menu(client: TeslaAPIClient, wall_connector_ip: str = None):
             choice = input("Select option (1-3): ").strip()
 
             if choice == "1":
-                await show_current_status(client, wall_connector_ip)
+                await show_current_status(client)
             elif choice == "2":
                 await set_charging_amps_interactive(client)
             elif choice == "3":
@@ -400,18 +432,13 @@ async def tesla_control():
 
     print("🔐 Connecting to Tesla API...")
 
-    # Check for Wall Connector configuration
-    wall_connector_ip = tesla_config.get("wall_connector_ip")
-    if wall_connector_ip:
-        print(f"🔌 Wall Connector configured: {wall_connector_ip}")
-
     try:
         async with TeslaAPIClient(tesla_config) as client:
             print("✅ Tesla API connection established")
             print(f"🚗 Vehicle: {tesla_config.get('vehicle_tag', 'Unknown')}")
 
             # Start interactive menu
-            await main_menu(client, wall_connector_ip)
+            await main_menu(client)
 
         return True
 
