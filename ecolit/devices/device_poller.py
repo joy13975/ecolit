@@ -309,11 +309,39 @@ class BatteryDevicePoller(DevicePollerBase):
                             soc_percentage = float(soc_val)
                         except ValueError:
                             continue
+                elif isinstance(soc_val, int | float) and epc == BatteryEPC.REMAINING_STORED_ELECTRICITY:
+                    # REMAINING_STORED_ELECTRICITY is in Wh units
+                    # Correct denominator = average of AC charging and discharging capacities
+                    try:
+                        a0_val = await self._safe_property_read(battery_device, 0xA0, description="AC_CHARGING_CAPACITY")
+                        a1_val = await self._safe_property_read(battery_device, 0xA1, description="AC_DISCHARGING_CAPACITY")
+                        
+                        if (a0_val and isinstance(a0_val, (int, float)) and 
+                            a1_val and isinstance(a1_val, (int, float))):
+                            # Use average of charging and discharging capacities as denominator
+                            effective_capacity_wh = (a0_val + a1_val) / 2
+                            soc_percentage = (soc_val / effective_capacity_wh) * 100
+                            
+                            # Clamp to reasonable range for safety
+                            soc_percentage = max(0, min(100, soc_percentage))
+                            logger.debug(f"Battery SOC: {soc_val}Wh ÷ {effective_capacity_wh:.1f}Wh = {soc_percentage:.1f}%")
+                        else:
+                            # Fallback to configured capacity if EPC reads fail
+                            if hasattr(self, 'device_instance') and self.device_instance.get('capacity_kwh'):
+                                fallback_capacity_wh = self.device_instance['capacity_kwh'] * 1000
+                                soc_percentage = (soc_val / fallback_capacity_wh) * 100
+                                soc_percentage = max(0, min(100, soc_percentage))
+                                logger.debug(f"Battery SOC (fallback): {soc_val}Wh ÷ {fallback_capacity_wh}Wh = {soc_percentage:.1f}%")
+                            else:
+                                continue
+                    except Exception as e:
+                        logger.warning(f"Failed to read capacity EPCs for SOC calculation: {e}")
+                        continue
                 elif isinstance(soc_val, int | float) and soc_val > 100:
-                    # Convert from technical units (0.01% increments) - THE FIX!
+                    # Convert from technical units (0.01% increments) for other EPCs
                     soc_percentage = soc_val / 100
                 else:
-                    # Direct assignment for values 0-100
+                    # Direct assignment for values 0-100 (display EPCs)
                     soc_percentage = soc_val
 
                 logger.debug(f"Battery {soc_type} SOC (0x{epc:02X}): {soc_percentage:.1f}%")

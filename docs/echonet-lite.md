@@ -20,9 +20,12 @@ ECHONET Lite is a communication protocol designed for smart home devices, partic
 
 #### Storage Battery (0x027D)
 - Battery capacity: 0xE0
-- Remaining capacity: 0xE2
+- Remaining capacity: 0xE2 (in Wh, requires calculation for SOC percentage)
 - Charging/discharging power: 0xD3
 - Operation mode: 0xDA
+- AC charging capacity: 0xA0 (maximum charging capacity in Wh)
+- AC discharging capacity: 0xA1 (maximum discharging capacity in Wh)
+- Rated capacity: 0xD0 (total battery capacity in Wh)
 
 #### Power Distribution Board (0x0287)
 - Instantaneous power consumption: 0xE7
@@ -84,6 +87,46 @@ See [architecture.md](architecture.md#energy-flow-topology) for complete system 
    - Periodic polling of key properties
    - Event-based notifications (if supported)
    - State change callbacks
+
+## Home Battery SOC Calculation
+
+### Understanding the Problem
+
+ECHONET Lite's 0xE2 property (REMAINING_STORED_ELECTRICITY) returns raw energy values in watt-hours (Wh), not percentages. Converting this to accurate State of Charge (SOC) percentages requires understanding which capacity value to use as the denominator.
+
+### Investigated EPC Properties
+
+Through systematic investigation, we identified key capacity-related EPCs:
+
+- **0xE2**: Raw remaining energy (11,172 Wh - dynamic)
+- **0xA0**: AC charging capacity (11,913 Wh - static)  
+- **0xA1**: AC discharging capacity (10,932 Wh - static)
+- **0xD0**: Rated capacity (12,700 Wh - static, nameplate)
+
+### Correct Calculation Method
+
+**Formula**: `SOC% = (Raw_0xE2) ÷ ((0xA0 + 0xA1) ÷ 2) × 100`
+
+**Example**: 
+- Raw 0xE2: 11,172 Wh
+- Average capacity: (11,913 + 10,932) ÷ 2 = 11,422.5 Wh  
+- SOC: 11,172 ÷ 11,422.5 × 100 = **97.8%**
+
+This matches wall display readings within ±0.2%, confirming the effective capacity is the average of AC charging and discharging capacities.
+
+### Why This Works
+
+The average of 0xA0 and 0xA1 represents the battery's **effective usable capacity** accounting for:
+- Charging efficiency losses
+- Discharging efficiency differences  
+- Battery protection buffers
+- Manufacturer calibration
+
+Using the nameplate capacity (0xD0) or estimated protection ranges produces significant errors (6%+ deviation from wall display).
+
+### Implementation
+
+See `device_poller.py:312-339` for the production implementation with fallback handling for EPC read failures.
 
 ## Troubleshooting
 
