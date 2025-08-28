@@ -1,10 +1,8 @@
 """Critical Tesla API tests - command execution failures that could strand drivers."""
 
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiohttp import ClientResponseError
 
 from ecolit.charging.tesla_api import TeslaAPIClient
 
@@ -29,16 +27,16 @@ class TestTeslaAPICritical:
         }
 
         client = TeslaAPIClient(config)
-        
+
         # Mock the tesla-fleet-api
         mock_api = MagicMock()
         mock_vehicle_api = MagicMock()
-        
+
         # Mock command failure response
         mock_vehicle_api.set_charging_amps = AsyncMock(
             return_value={"response": {"result": False, "reason": "vehicle_unavailable"}}
         )
-        
+
         mock_api.vehicles.specific.return_value = mock_vehicle_api
         client.api = mock_api
 
@@ -63,7 +61,7 @@ class TestTeslaAPICritical:
         }
 
         client = TeslaAPIClient(config)
-        
+
         # Mock API not being initialized due to auth failure
         client.api = None
 
@@ -86,16 +84,16 @@ class TestTeslaAPICritical:
         }
 
         client = TeslaAPIClient(config)
-        
+
         # Mock the tesla-fleet-api with rate limiting
         mock_api = MagicMock()
         mock_vehicle_api = MagicMock()
-        
+
         # Mock rate limit exception - use a simpler exception
         mock_vehicle_api.set_charging_amps = AsyncMock(
             side_effect=Exception("Rate limit exceeded: 429 Too Many Requests")
         )
-        
+
         mock_api.vehicles.specific.return_value = mock_vehicle_api
         client.api = mock_api
 
@@ -120,18 +118,18 @@ class TestTeslaAPICritical:
         }
 
         client = TeslaAPIClient(config)
-        
+
         # Mock the tesla-fleet-api
         mock_api = MagicMock()
         mock_vehicle_api = MagicMock()
-        
+
         # Track what amperage values are sent
         sent_amps = []
-        
+
         async def mock_set_charging_amps(charging_amps):
             sent_amps.append(charging_amps)
             return {"response": {"result": True}}
-            
+
         mock_vehicle_api.set_charging_amps = mock_set_charging_amps
         mock_api.vehicles.specific.return_value = mock_vehicle_api
         client.api = mock_api

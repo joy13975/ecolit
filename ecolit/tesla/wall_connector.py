@@ -3,9 +3,9 @@
 
 import asyncio
 import ssl
-from typing import Dict, Optional, Any
+from typing import Any
+
 import aiohttp
-from datetime import datetime
 
 
 class WallConnectorClient:
@@ -23,7 +23,11 @@ class WallConnectorClient:
         self.port = port
         self.use_https = use_https
         protocol = "https" if use_https else "http"
-        self.base_url = f"{protocol}://{host}:{port}" if port != (443 if use_https else 80) else f"{protocol}://{host}"
+        self.base_url = (
+            f"{protocol}://{host}:{port}"
+            if port != (443 if use_https else 80)
+            else f"{protocol}://{host}"
+        )
         self.timeout = aiohttp.ClientTimeout(total=10)
 
         # Create SSL context for HTTPS
@@ -34,7 +38,7 @@ class WallConnectorClient:
         else:
             self.ssl_context = None
 
-    async def _get_api(self, endpoint: str) -> Optional[Dict[str, Any]]:
+    async def _get_api(self, endpoint: str) -> dict[str, Any] | None:
         """Make GET request to Wall Connector API.
 
         Args:
@@ -58,14 +62,14 @@ class WallConnectorClient:
             print(f"❌ Cannot connect to Wall Connector at {self.base_url}")
             print(f"   Error: {e}")
             return None
-        except asyncio.TimeoutError:
-            print(f"⏱️  Wall Connector connection timed out")
+        except TimeoutError:
+            print("⏱️  Wall Connector connection timed out")
             return None
         except Exception as e:
             print(f"❌ Unexpected error accessing Wall Connector: {e}")
             return None
 
-    async def get_vitals(self) -> Optional[Dict[str, Any]]:
+    async def get_vitals(self) -> dict[str, Any] | None:
         """Get real-time vitals from Wall Connector.
 
         Returns:
@@ -73,7 +77,7 @@ class WallConnectorClient:
         """
         return await self._get_api("/api/1/vitals")
 
-    async def get_lifetime(self) -> Optional[Dict[str, Any]]:
+    async def get_lifetime(self) -> dict[str, Any] | None:
         """Get lifetime statistics from Wall Connector.
 
         Returns:
@@ -81,7 +85,7 @@ class WallConnectorClient:
         """
         return await self._get_api("/api/1/lifetime")
 
-    async def get_wifi_status(self) -> Optional[Dict[str, Any]]:
+    async def get_wifi_status(self) -> dict[str, Any] | None:
         """Get WiFi status from Wall Connector.
 
         Returns:
@@ -89,7 +93,7 @@ class WallConnectorClient:
         """
         return await self._get_api("/api/1/wifi_status")
 
-    async def get_version(self) -> Optional[Dict[str, Any]]:
+    async def get_version(self) -> dict[str, Any] | None:
         """Get version information from Wall Connector.
 
         Returns:
@@ -98,7 +102,7 @@ class WallConnectorClient:
         return await self._get_api("/api/1/version")
 
 
-def format_wall_connector_status(vitals: Dict[str, Any], lifetime: Dict[str, Any] = None) -> str:
+def format_wall_connector_status(vitals: dict[str, Any], lifetime: dict[str, Any] = None) -> str:
     """Format Wall Connector status data for display.
 
     Args:
@@ -117,9 +121,29 @@ def format_wall_connector_status(vitals: Dict[str, Any], lifetime: Dict[str, Any
     vehicle_connected = vitals.get("vehicle_connected", False)
     contactor_closed = vitals.get("contactor_closed", False)
 
+    # For Tesla Wall Connector, determine actual charging more carefully
+    # The Wall Connector can report stale current readings, so we need multiple indicators
+    vehicle_current = vitals.get("vehicle_current_a", 0)
+    session_time = vitals.get("session_s", 0)
+    uptime = vitals.get("uptime_s", 0)
+
+    # Key insight: if session_s equals uptime_s, this is a stuck session from boot
+    # A real charging session would not start exactly when the Wall Connector powers on
+    is_stuck_session = (
+        session_time > 0 and uptime > 0 and abs(session_time - uptime) < 60
+    )  # Within 1 minute tolerance
+
+    if is_stuck_session:
+        actually_charging = False  # Override stuck session data
+    else:
+        actually_charging = vehicle_current > 0.5
+
     if vehicle_connected:
         lines.append("🔌 Vehicle: Connected")
-        if contactor_closed:
+        if is_stuck_session:
+            lines.append("⏸️  Status: Connected (Not Charging)")
+            lines.append("ℹ️  Wall Connector has stuck session data from boot")
+        elif vehicle_current > 0.5:
             lines.append("⚡ Status: Charging Active")
         else:
             lines.append("⏸️  Status: Connected (Not Charging)")
@@ -132,7 +156,7 @@ def format_wall_connector_status(vitals: Dict[str, Any], lifetime: Dict[str, Any
         state_map = {
             0: "Starting",
             1: "Standby (Not Connected)",
-            2: "Vehicle Detected",  
+            2: "Vehicle Detected",
             3: "Ready to Charge",
             4: "Vehicle Connected (Not Charging)",
             5: "Sleep Mode",
@@ -149,9 +173,8 @@ def format_wall_connector_status(vitals: Dict[str, Any], lifetime: Dict[str, Any
         state_name = state_map.get(evse_state, f"Unknown State ({evse_state})")
         lines.append(f"📊 Charger State: {state_name}")
 
-    # Power delivery
-    if contactor_closed:
-        vehicle_current = vitals.get("vehicle_current_a", 0)
+    # Power delivery (only show when actually charging, not stuck session)
+    if actually_charging:
         grid_voltage = vitals.get("grid_v", 0)
 
         if vehicle_current and grid_voltage:
@@ -188,8 +211,9 @@ def format_wall_connector_status(vitals: Dict[str, Any], lifetime: Dict[str, Any
         lines.append(f"🌡️  Temps: {', '.join(temps)}")
 
     # Grid info
+    grid_voltage = vitals.get("grid_v", 0)
     grid_hz = vitals.get("grid_hz")
-    if grid_hz:
+    if grid_hz and grid_voltage:
         lines.append(f"🔌 Grid: {grid_voltage:.0f}V @ {grid_hz:.1f}Hz")
 
     # Alerts

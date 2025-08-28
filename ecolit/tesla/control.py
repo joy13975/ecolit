@@ -11,7 +11,6 @@ import yaml
 from ecolit.charging.tesla_api import TeslaAPIClient
 from ecolit.tesla.utils import (
     ensure_vehicle_awake_for_command,
-    prompt_yes_no,
 )
 
 
@@ -233,42 +232,42 @@ async def show_current_status(client: TeslaAPIClient):
         if live_status and "response" in live_status:
             live_data = live_status["response"]
             wall_connectors = live_data.get("wall_connectors", [])
-            
+
             if wall_connectors:
                 for i, wc in enumerate(wall_connectors):
                     wc_power = wc.get("wall_connector_power", 0)
                     wc_state = wc.get("wall_connector_state", "unknown")
-                    
+
                     # Map Tesla Fleet API wall connector states to human-readable names
                     # Based on community research and Tesla behavior patterns
                     fleet_state_map = {
                         1: "Standby",
-                        2: "Vehicle Detected", 
+                        2: "Vehicle Detected",
                         3: "Ready to Charge",
                         4: "Vehicle Connected (Not Charging)",
                         5: "Sleep Mode",
                         9: "Vehicle Connected (Waiting)",
                         10: "Charging Starting",
                         11: "Charging",
-                        12: "Charging Stopping", 
+                        12: "Charging Stopping",
                         13: "Charging Complete",
-                        14: "Vehicle Connected (Scheduled)"
+                        14: "Vehicle Connected (Scheduled)",
                     }
-                    
+
                     state_name = fleet_state_map.get(wc_state, f"Unknown State ({wc_state})")
-                    
+
                     # Format Wall Connector status
                     if wc_power > 50:  # Active power consumption
-                        print(f"⚡ Wall Connector {i+1}: {wc_power:.0f}W")
+                        print(f"⚡ Wall Connector {i + 1}: {wc_power:.0f}W")
                         if wc_power > 500:
-                            print(f"   🔋 Battery conditioning/trickle charging")
+                            print("   🔋 Battery conditioning/trickle charging")
                         else:
-                            print(f"   ⏸️  Standby power consumption")
+                            print("   ⏸️  Standby power consumption")
                     else:
-                        print(f"🔌 Wall Connector {i+1}: {wc_power:.0f}W")
-                        
+                        print(f"🔌 Wall Connector {i + 1}: {wc_power:.0f}W")
+
                     print(f"   📊 Status: {state_name}")
-                    
+
             else:
                 print("ℹ️  No Wall Connectors found in energy site")
                 # Show other site power data for context
@@ -276,7 +275,9 @@ async def show_current_status(client: TeslaAPIClient):
                 solar_power = live_data.get("solar_power", 0)
                 grid_power = live_data.get("grid_power", 0)
                 if any([site_power, solar_power, grid_power]):
-                    print(f"🏠 Site Power - Load: {site_power}W, Solar: {solar_power}W, Grid: {grid_power}W")
+                    print(
+                        f"🏠 Site Power - Load: {site_power}W, Solar: {solar_power}W, Grid: {grid_power}W"
+                    )
         else:
             print("❌ No Tesla energy site data available")
             print("   Ensure energy_device_data scope is granted and energy site is registered")

@@ -51,6 +51,12 @@ class MetricsLogger:
             "solar_power_w",
             "ev_charging_amps",
             "ev_policy",
+            "tesla_car_soc",
+            "tesla_car_charging_power",
+            "tesla_car_charging_state",
+            "wall_connector_power",
+            "house_load_estimate",
+            "house_load_confidence",
             "notes",
         ]
 
@@ -79,6 +85,12 @@ class MetricsLogger:
         solar_power: float | None = None,
         ev_charging_amps: float = 0,
         ev_policy: str = "unknown",
+        tesla_car_soc: float | None = None,
+        tesla_car_charging_power: float | None = None,
+        tesla_car_charging_state: str | None = None,
+        wall_connector_power: float | None = None,
+        house_load_estimate: float | None = None,
+        house_load_confidence: str | None = None,
         notes: str = "",
     ) -> None:
         """Log EV charging metrics to CSV file."""
@@ -99,6 +111,12 @@ class MetricsLogger:
                 "solar_power_w": solar_power,
                 "ev_charging_amps": ev_charging_amps,
                 "ev_policy": ev_policy,
+                "tesla_car_soc": tesla_car_soc,
+                "tesla_car_charging_power": tesla_car_charging_power,
+                "tesla_car_charging_state": tesla_car_charging_state,
+                "wall_connector_power": wall_connector_power,
+                "house_load_estimate": house_load_estimate,
+                "house_load_confidence": house_load_confidence,
                 "notes": notes,
             }
 

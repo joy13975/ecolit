@@ -119,16 +119,16 @@ class TeslaAPIClient:
             if self.private_key:
                 try:
                     from cryptography.hazmat.primitives import serialization
-                    
-                    with open(self.private_key, 'rb') as f:
+
+                    with open(self.private_key, "rb") as f:
                         private_key_bytes = f.read()
-                    
+
                     # Parse the PEM private key
                     private_key_obj = serialization.load_pem_private_key(
                         private_key_bytes,
-                        password=None  # Assuming no password
+                        password=None,  # Assuming no password
                     )
-                    
+
                     self.api.private_key = private_key_obj
                     logger.info("Private key loaded for signed vehicle commands (TVCP)")
                 except Exception as e:
@@ -366,7 +366,9 @@ class TeslaAPIClient:
 
         except Exception as e:
             logger.error(f"TVCP signed command failed: {e}")
-            logger.error("Ensure tesla-http-proxy is running on port 4443 and vehicle keys are configured")
+            logger.error(
+                "Ensure tesla-http-proxy is running on port 4443 and vehicle keys are configured"
+            )
             return False
 
     async def charge_start(self) -> bool:
@@ -393,7 +395,9 @@ class TeslaAPIClient:
 
         except Exception as e:
             logger.error(f"TVCP signed command failed: {e}")
-            logger.error("Ensure tesla-http-proxy is running on port 4443 and vehicle keys are configured")
+            logger.error(
+                "Ensure tesla-http-proxy is running on port 4443 and vehicle keys are configured"
+            )
             return False
 
     async def charge_stop(self) -> bool:
@@ -420,7 +424,9 @@ class TeslaAPIClient:
 
         except Exception as e:
             logger.error(f"TVCP signed command failed: {e}")
-            logger.error("Ensure tesla-http-proxy is running on port 4443 and vehicle keys are configured")
+            logger.error(
+                "Ensure tesla-http-proxy is running on port 4443 and vehicle keys are configured"
+            )
             return False
 
     def is_enabled(self) -> bool:
@@ -429,10 +435,10 @@ class TeslaAPIClient:
 
     async def get_charging_history(self, limit: int = 10) -> dict[str, Any]:
         """Get recent charging history from Tesla Fleet API.
-        
+
         Args:
             limit: Number of charging sessions to retrieve (default 10)
-            
+
         Returns:
             Dict containing charging history data or empty dict if error
         """
@@ -443,7 +449,7 @@ class TeslaAPIClient:
             # Use the tesla-fleet-api library's charging history endpoint
             # This should correspond to GET /api/1/dx/charging/history
             result = await self.api.charging.history(limit=limit)
-            
+
             if result and "data" in result:
                 logger.info(f"Retrieved {len(result['data'])} charging history entries")
                 return result
@@ -457,7 +463,7 @@ class TeslaAPIClient:
 
     async def get_energy_sites(self) -> dict[str, Any]:
         """Get list of Tesla energy sites (Powerwall, Solar, Wall Connector).
-        
+
         Returns:
             Dict containing energy sites data or empty dict if error
         """
@@ -467,12 +473,14 @@ class TeslaAPIClient:
         try:
             # Use the products endpoint to get all Tesla products including energy sites
             result = await self.api.products()
-            
+
             if result and "response" in result:
                 products = result["response"]
                 # Filter for energy products (sites)
                 energy_sites = [p for p in products if "energy_site_id" in p]
-                logger.info(f"Retrieved {len(energy_sites)} energy sites from {len(products)} total products")
+                logger.info(
+                    f"Retrieved {len(energy_sites)} energy sites from {len(products)} total products"
+                )
                 return {"response": energy_sites}
             else:
                 logger.warning("No products data returned")
@@ -484,10 +492,10 @@ class TeslaAPIClient:
 
     async def get_wall_connector_live_status(self, energy_site_id: int = None) -> dict[str, Any]:
         """Get live Wall Connector status from Tesla Fleet API.
-        
+
         Args:
             energy_site_id: Energy site ID. If None, will try to find first available site.
-            
+
         Returns:
             Dict containing Wall Connector live status or empty dict if error
         """
@@ -500,12 +508,12 @@ class TeslaAPIClient:
             if not sites_data or "response" not in sites_data:
                 logger.error("No energy sites found")
                 return {}
-            
+
             sites = sites_data["response"]
             if not sites:
                 logger.error("No energy sites available")
                 return {}
-            
+
             energy_site_id = sites[0]["energy_site_id"]
             logger.info(f"Using energy site ID: {energy_site_id}")
 
@@ -513,7 +521,7 @@ class TeslaAPIClient:
             # Create an EnergySite instance with correct parameters
             site = self.api.energySites.Site(self.api, energy_site_id)
             result = await site.live_status()
-            
+
             if result and "response" in result:
                 live_data = result["response"]
                 wall_connectors = live_data.get("wall_connectors", [])

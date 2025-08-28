@@ -216,7 +216,7 @@ async def mint_tesla_tokens():
         "vehicle_charging_cmds",
         "vehicle_location",  # May be needed for some data access
         "energy_device_data",  # Required for Wall Connector and energy sites
-        "energy_cmds",         # Required for energy site commands
+        "energy_cmds",  # Required for energy site commands
     ]
     scope_string = " ".join(scopes)
 

@@ -9,10 +9,12 @@ from pychonet import EchonetInstance
 from pychonet.lib.udpserver import UDPServer
 
 from .charging import EnergyMetrics, EVChargingController
+from .charging.tesla_api import TeslaAPIClient
 from .constants import EPC_NAMES, CommonEPC
 from .device_state_manager import DeviceStateManager
 from .devices import BatteryDevicePoller, SolarDevicePoller
 from .metrics_logger import MetricsLogger
+from .tesla.wall_connector import WallConnectorClient
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,16 @@ class EcoliteManager:
         # Initialize device state manager (after api_client is available)
         self.device_state_manager = None
 
+        # Initialize Tesla clients
+        tesla_config = config.get("tesla", {})
+        self.tesla_client = None
+        self.wall_connector_client = None
+        if tesla_config.get("enabled", False):
+            self.tesla_client = TeslaAPIClient(tesla_config)
+            wall_connector_ip = tesla_config.get("wall_connector_ip")
+            if wall_connector_ip:
+                self.wall_connector_client = WallConnectorClient(wall_connector_ip)
+
     async def start(self) -> None:
         """Start the ECHONET Lite manager."""
         logger.info("Starting ECHONET Lite manager")
@@ -52,6 +64,16 @@ class EcoliteManager:
 
         # Initialize ECHONET Lite API
         await self._initialize_api()
+
+        # Initialize Tesla API client if enabled
+        if self.tesla_client:
+            try:
+                await self.tesla_client.start()
+                logger.info("Tesla API client initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize Tesla API client: {e}")
+                logger.warning("Tesla data will not be available")
+                self.tesla_client = None
 
         # Validate required devices if specified
         await self._validate_required_devices()
@@ -69,6 +91,13 @@ class EcoliteManager:
 
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
+
+        # Clean up Tesla client
+        if self.tesla_client:
+            try:
+                await self.tesla_client.close()
+            except Exception as e:
+                logger.error(f"Error closing Tesla client: {e}")
 
         # Clean up metrics logger
         if hasattr(self, "metrics_logger"):
@@ -372,6 +401,40 @@ class EcoliteManager:
                 else:
                     battery_soc = official_soc
 
+            # Poll Tesla car data for actual charging power and EV SOC
+            tesla_car_charging_power = None
+            tesla_car_soc = None
+            tesla_car_charging_state = None
+            if self.tesla_client and self.tesla_client.is_enabled():
+                try:
+                    tesla_vehicle_data = await self.tesla_client.get_vehicle_data()
+                    if tesla_vehicle_data and tesla_vehicle_data.timestamp:
+                        tesla_car_charging_power = tesla_vehicle_data.charging_power  # kW
+                        tesla_car_soc = tesla_vehicle_data.battery_level  # %
+                        tesla_car_charging_state = tesla_vehicle_data.charging_state
+                        logger.debug(
+                            f"Tesla car: SOC={tesla_car_soc}%, Power={tesla_car_charging_power}kW, State={tesla_car_charging_state}"
+                        )
+                except Exception as e:
+                    logger.debug(f"Tesla car data unavailable: {e}")
+
+            # Poll Wall Connector data for actual power consumption
+            wall_connector_power = None
+            if self.wall_connector_client:
+                try:
+                    vitals = await self.wall_connector_client.get_vitals()
+                    if vitals:
+                        # Calculate actual power from voltage and current
+                        vehicle_current = vitals.get("vehicle_current_a", 0)
+                        grid_voltage = vitals.get("grid_v", 0)
+                        if vehicle_current and grid_voltage:
+                            wall_connector_power = (vehicle_current * grid_voltage) / 1000  # kW
+                        logger.debug(
+                            f"Wall Connector: {vehicle_current}A @ {grid_voltage}V = {wall_connector_power}kW"
+                        )
+                except Exception as e:
+                    logger.debug(f"Wall Connector data unavailable: {e}")
+
             # EV Charging Control - Calculate optimal charging amps based on policy
             ev_amps = 0
             if self.ev_controller.is_enabled():
@@ -435,6 +498,59 @@ class EcoliteManager:
                     policy_name = self.ev_controller.get_current_policy()
                     essential_stats.append(f"EV:{ev_amps}A({policy_name})")
 
+                # Tesla car charging power (actual power from Fleet API)
+                if tesla_car_charging_power is not None and tesla_car_charging_power > 0:
+                    essential_stats.append(f"EVPWR:{tesla_car_charging_power:.1f}kW")
+                elif tesla_car_charging_state:
+                    # Show charging state even if no power data
+                    essential_stats.append(f"EVPWR:0kW({tesla_car_charging_state})")
+
+                # Tesla car SOC
+                if tesla_car_soc is not None:
+                    essential_stats.append(f"EVSOC:{tesla_car_soc}%")
+
+                # Wall Connector power consumption
+                if wall_connector_power is not None and wall_connector_power > 0:
+                    essential_stats.append(f"WC:{wall_connector_power:.1f}kW")
+
+                # Calculate and display house load estimate
+                house_load = None
+                confidence = "LOW"
+                if solar_power is not None and grid_power_flow is not None:
+                    # House Load = Solar Production - Grid Export + Home Battery Discharge - EV Charging Power
+                    # Grid flow: positive = import from grid, negative = export to grid
+                    # Battery power: positive = charging battery, negative = discharging from battery
+                    # EV charging power: positive = power consumed by EV
+
+                    grid_contribution = (
+                        grid_power_flow if grid_power_flow > 0 else 0
+                    )  # Only count imports
+                    battery_discharge = (
+                        -battery_power if battery_power and battery_power < 0 else 0
+                    )  # Only count discharge
+                    ev_consumption = 0
+
+                    # Use actual Tesla charging power if available, otherwise estimate from wall connector
+                    if tesla_car_charging_power and tesla_car_charging_power > 0:
+                        ev_consumption = tesla_car_charging_power * 1000  # Convert kW to W
+                        confidence = "HIGH"
+                    elif wall_connector_power and wall_connector_power > 0:
+                        ev_consumption = wall_connector_power * 1000  # Convert kW to W
+                        confidence = "MEDIUM"
+                    else:
+                        confidence = "MEDIUM"
+
+                    # Calculate house load in watts
+                    house_load = (
+                        solar_power + grid_contribution + battery_discharge - ev_consumption
+                    )
+
+                    if house_load >= 0:
+                        essential_stats.append(f"HouseLoad:{house_load:.0f}W({confidence})")
+                    else:
+                        # Negative house load indicates calculation error or unusual situation
+                        essential_stats.append(f"HouseLoad:?W({confidence})")
+
                 # Log the consolidated essential stats
                 logger.info("⚡ " + " ".join(essential_stats))
 
@@ -452,6 +568,16 @@ class EcoliteManager:
                             ),
                         }
 
+                    # Prepare Tesla data for logging
+                    tesla_data = {
+                        "tesla_car_soc": tesla_car_soc,
+                        "tesla_car_charging_power": tesla_car_charging_power,
+                        "tesla_car_charging_state": tesla_car_charging_state,
+                        "wall_connector_power": wall_connector_power,
+                        "house_load_estimate": house_load,
+                        "house_load_confidence": confidence,
+                    }
+
                     self.metrics_logger.log_metrics(
                         battery_soc=official_soc,  # Log official SoC separately
                         battery_power=battery_power,
@@ -460,6 +586,7 @@ class EcoliteManager:
                         ev_charging_amps=ev_amps,
                         ev_policy=policy_name,
                         **realtime_soc_data,  # Include real-time SoC data
+                        **tesla_data,  # Include Tesla data
                     )
             else:
                 logger.warning("⚠️  No essential metrics available for EV charging optimization")
