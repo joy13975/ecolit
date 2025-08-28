@@ -1,6 +1,8 @@
 # Tesla Fleet API Setup - Complete ecolit Integration
 
-**TL;DR**: Tesla Fleet API requires (A) User OAuth tokens for vehicle data access and (B) Partner registration so Tesla accepts your app. This guide covers the complete setup using ecolit's automated scripts.
+**TL;DR**: Tesla Fleet API requires (A) User OAuth tokens for vehicle data access, (B) Partner registration so Tesla accepts your app, and (C) TVCP (Tesla Vehicle Command Protocol) for all vehicle commands. This guide covers the complete setup using ecolit's automated scripts.
+
+**⚠️ CRITICAL**: Modern Tesla vehicles require TVCP for ALL command operations (charging control, start/stop, etc.). Vehicle data reading works without TVCP, but commands will fail with 403 Forbidden errors.
 
 ## Prerequisites
 

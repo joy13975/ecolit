@@ -118,9 +118,18 @@ class TeslaAPIClient:
             # Set up private key for signed commands if provided
             if self.private_key:
                 try:
-                    with open(self.private_key) as f:
-                        private_key_content = f.read()
-                    self.api.private_key = private_key_content
+                    from cryptography.hazmat.primitives import serialization
+                    
+                    with open(self.private_key, 'rb') as f:
+                        private_key_bytes = f.read()
+                    
+                    # Parse the PEM private key
+                    private_key_obj = serialization.load_pem_private_key(
+                        private_key_bytes,
+                        password=None  # Assuming no password
+                    )
+                    
+                    self.api.private_key = private_key_obj
                     logger.info("Private key loaded for signed vehicle commands (TVCP)")
                 except Exception as e:
                     logger.warning(f"Failed to load private key: {e}")
@@ -331,23 +340,22 @@ class TeslaAPIClient:
             return False
 
     async def set_charging_amps(self, amps: int) -> bool:
-        """Set Tesla charging amperage using tesla-fleet-api library."""
+        """Set Tesla charging amperage using TVCP signed commands (required for modern vehicles)."""
         if not self.enabled or not self.api:
             return False
 
         # Clamp to safety limits
         amps = max(self.min_amps, min(amps, self.max_amps))
 
+        # TVCP is mandatory - no fallback to unsigned commands
+        if not self.vin:
+            logger.error("VIN is required for TVCP signed commands")
+            return False
+
         try:
-            # Use signed commands if private key is configured
-            if self.private_key and self.vin:
-                # Use signed commands for TVCP-enabled vehicles
-                vehicle_api = self.api.vehicles.specificSigned(self.vin)
-                result = await vehicle_api.set_charging_amps(charging_amps=amps)
-            else:
-                # Fall back to regular Fleet API (may fail with 403 on modern vehicles)
-                vehicle_api = self.api.vehicles.specific(self.vehicle_id)
-                result = await vehicle_api.set_charging_amps(charging_amps=amps)
+            # Always use TVCP proxy for signed commands (modern vehicles require this)
+            vehicle_api = self.api.vehicles.specificSigned(self.vin)
+            result = await vehicle_api.set_charging_amps(charging_amps=amps)
 
             if result and result.get("response", {}).get("result"):
                 logger.info(f"Tesla charging amps set to {amps}A")
@@ -357,27 +365,24 @@ class TeslaAPIClient:
                 return False
 
         except Exception as e:
-            error_msg = str(e)
-            if "Tesla Vehicle Command Protocol required" in error_msg:
-                logger.error(
-                    "TVCP required for set_charging_amps. Configure private_key in config to enable signed commands."
-                )
-            else:
-                logger.error(f"Failed to set Tesla charging amps: {e}")
+            logger.error(f"TVCP signed command failed: {e}")
+            logger.error("Ensure tesla-http-proxy is running on port 4443 and vehicle keys are configured")
             return False
 
     async def charge_start(self) -> bool:
-        """Start Tesla charging."""
+        """Start Tesla charging using TVCP signed commands (required for modern vehicles)."""
         if not self.enabled or not self.api:
             return False
 
+        # TVCP is mandatory - no fallback to unsigned commands
+        if not self.vin:
+            logger.error("VIN is required for TVCP signed commands")
+            return False
+
         try:
-            if self.private_key and self.vin:
-                vehicle_api = self.api.vehicles.specificSigned(self.vin)
-                result = await vehicle_api.charge_start()
-            else:
-                vehicle_api = self.api.vehicles.specific(self.vehicle_id)
-                result = await vehicle_api.charge_start()
+            # Always use TVCP proxy for signed commands
+            vehicle_api = self.api.vehicles.specificSigned(self.vin)
+            result = await vehicle_api.charge_start()
 
             if result and result.get("response", {}).get("result"):
                 logger.info("Tesla charging started")
@@ -387,21 +392,24 @@ class TeslaAPIClient:
                 return False
 
         except Exception as e:
-            logger.error(f"Failed to start Tesla charging: {e}")
+            logger.error(f"TVCP signed command failed: {e}")
+            logger.error("Ensure tesla-http-proxy is running on port 4443 and vehicle keys are configured")
             return False
 
     async def charge_stop(self) -> bool:
-        """Stop Tesla charging."""
+        """Stop Tesla charging using TVCP signed commands (required for modern vehicles)."""
         if not self.enabled or not self.api:
             return False
 
+        # TVCP is mandatory - no fallback to unsigned commands
+        if not self.vin:
+            logger.error("VIN is required for TVCP signed commands")
+            return False
+
         try:
-            if self.private_key and self.vin:
-                vehicle_api = self.api.vehicles.specificSigned(self.vin)
-                result = await vehicle_api.charge_stop()
-            else:
-                vehicle_api = self.api.vehicles.specific(self.vehicle_id)
-                result = await vehicle_api.charge_stop()
+            # Always use TVCP proxy for signed commands
+            vehicle_api = self.api.vehicles.specificSigned(self.vin)
+            result = await vehicle_api.charge_stop()
 
             if result and result.get("response", {}).get("result"):
                 logger.info("Tesla charging stopped")
@@ -411,7 +419,8 @@ class TeslaAPIClient:
                 return False
 
         except Exception as e:
-            logger.error(f"Failed to stop Tesla charging: {e}")
+            logger.error(f"TVCP signed command failed: {e}")
+            logger.error("Ensure tesla-http-proxy is running on port 4443 and vehicle keys are configured")
             return False
 
     def is_enabled(self) -> bool:

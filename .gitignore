@@ -1,5 +1,6 @@
 .tesla*
 data
+vehicle-command
 
 # Ecolit config files (keep only template)
 config.yaml
