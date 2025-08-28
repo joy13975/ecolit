@@ -49,7 +49,7 @@ tesla:
 - **Port 8750 in use**: Stop other applications using this port
 - **Browser doesn't open**: Manually visit the displayed authorization URL
 - **invalid_redirect_uri**: Ensure Tesla app redirect URI exactly matches `http://localhost:8750/callback`
-- **Missing scopes**: Verify Tesla app has all required scopes enabled in developer portal
+- **Missing scopes**: Verify Tesla app has all required scopes including `energy_device_data` for Wall Connector access
 - **Registration fails**: Check public key is accessible at https://joy13975.github.io/.well-known/appspecific/com.tesla.3p.public-key.pem
 
 ## Ongoing Maintenance
