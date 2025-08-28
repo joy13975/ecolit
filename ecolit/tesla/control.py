@@ -270,9 +270,6 @@ async def set_charging_amps_interactive(client: TeslaAPIClient):
 
         # Confirmation with default Yes
         print(f"\n🔧 Setting charging amperage to {amps}A...")
-        if not prompt_yes_no("Proceed?", default_yes=True):
-            print("❌ Cancelled")
-            return
 
         # Execute the command
         success = await client.set_charging_amps(amps)
