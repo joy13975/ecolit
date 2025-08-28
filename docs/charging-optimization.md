@@ -90,7 +90,7 @@ def power_to_amperage(power_w, voltage=200):
 ```
 
 #### Rate Limiting & Safety (Future Implementation)
-Rate limiting and safety implementations are detailed in [tesla-auth.md](tesla-auth.md#rate-limiting--safety).
+Rate limiting and safety implementations are detailed in [tesla-integration.md](tesla-integration.md#charging-control-with-rate-limiting).
 
 ## Current Implementation (Simple Policies)
 
@@ -122,7 +122,7 @@ def calculate_target_amps(self, current_amps: int, metrics: EnergyMetrics) -> in
 HEMS data structure and integration details are covered in [architecture.md](architecture.md#hems-data-processing-pipeline) and [echonet-lite.md](echonet-lite.md).
 
 ### EV API Integration (Future)
-Tesla API integration details are covered in [tesla-auth.md](tesla-auth.md). The future complex algorithm would use this integration to implement the theoretical control logic described above.
+Tesla API integration details are covered in [tesla-integration.md](tesla-integration.md). The future complex algorithm would use this integration to implement the theoretical control logic described above.
 
 ## Configuration Parameters
 

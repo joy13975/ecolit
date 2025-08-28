@@ -361,7 +361,7 @@ async def set_charging_amps_interactive(client: TeslaAPIClient):
                 print("- Check if tesla-http-proxy is running on port 4443")
                 print("- Verify vehicle keys are properly added")
                 print("- Check proxy logs for errors")
-            print("\n📚 Full setup guide: docs/tesla-tvcp-setup.md")
+            print("\n📚 Full setup guide: docs/tesla-integration.md#tvcp-setup-for-modern-vehicles")
         else:
             print(f"\n❌ Unexpected error: {e}")
 

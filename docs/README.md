@@ -10,15 +10,13 @@ Tesla charging optimization using ECHONET Lite HEMS data for real-time PV surplu
 - [**echonet-lite.md**](echonet-lite.md) - ECHONET Lite protocol implementation details
 
 ### 📊 **Data Analysis & Insights**
-- [**energy-data-analysis.md**](energy-data-analysis.md) - Complete energy data analysis and methodology
-- [**tesla-charging-analysis.md**](tesla-charging-analysis.md) - Tesla charging patterns and real-time control insights
+- [**energy-analysis.md**](energy-analysis.md) - Energy data analysis, Tesla charging patterns and optimization insights
 - [**charging-optimization.md**](charging-optimization.md) - Optimization algorithm and implementation
 
 ## 🎯 **Quick Start Guide**
 
 1. **Understanding the System**: Start with [architecture.md](architecture.md) for system overview
-2. **Data Insights**: Read [energy-data-analysis.md](energy-data-analysis.md) for data-driven learnings
-3. **Tesla Integration**: See [tesla-charging-analysis.md](tesla-charging-analysis.md) for charging patterns
+2. **Data Insights**: Read [energy-analysis.md](energy-analysis.md) for data-driven learnings and Tesla charging patterns
 4. **Implementation**: Use [charging-optimization.md](charging-optimization.md) for algorithm details
 
 ## 🔍 **Key Findings Summary**
