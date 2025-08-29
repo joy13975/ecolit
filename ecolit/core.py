@@ -10,6 +10,7 @@ from pychonet.lib.udpserver import UDPServer
 
 from .charging import EnergyMetrics, EVChargingController
 from .charging.tesla_api import TeslaAPIClient
+from .charging.tesla_controller import TeslaChargingController
 from .constants import EPC_NAMES, CommonEPC
 from .device_state_manager import DeviceStateManager
 from .devices import BatteryDevicePoller, SolarDevicePoller
@@ -22,9 +23,10 @@ logger = logging.getLogger(__name__)
 class EcoliteManager:
     """Manager for ECHONET Lite device communication and monitoring."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any], dry_run: bool = False):
         """Initialize the manager with configuration."""
         self.config = config
+        self.dry_run = dry_run
         self.devices: dict[str, Any] = {}
         self._running = False
         self._tasks: list[asyncio.Task] = []
@@ -50,9 +52,11 @@ class EcoliteManager:
         # Initialize Tesla clients
         tesla_config = config.get("tesla", {})
         self.tesla_client = None
+        self.tesla_controller = None
         self.wall_connector_client = None
         if tesla_config.get("enabled", False):
             self.tesla_client = TeslaAPIClient(tesla_config)
+            self.tesla_controller = TeslaChargingController(self.tesla_client, config)
             wall_connector_ip = tesla_config.get("wall_connector_ip")
             if wall_connector_ip:
                 self.wall_connector_client = WallConnectorClient(wall_connector_ip)
@@ -60,6 +64,13 @@ class EcoliteManager:
     async def start(self) -> None:
         """Start the ECHONET Lite manager."""
         logger.info("Starting ECHONET Lite manager")
+
+        # Log mode information
+        if self.dry_run:
+            logger.info("🚀 Running in DRY-RUN mode - monitoring only, no charging control")
+        else:
+            logger.info("🚀 Running in CONTROL mode - will actively control Tesla charging")
+
         self._running = True
 
         # Initialize ECHONET Lite API
@@ -394,7 +405,6 @@ class EcoliteManager:
                 # Use real-time SoC estimate if available and confident
                 realtime_soc = battery_data.get("realtime_soc")
                 soc_confidence = battery_data.get("soc_confidence", 0.0)
-                soc_source = battery_data.get("soc_source", "unknown")
 
                 # Use real-time estimate if confidence > 0.6, otherwise use official
                 if realtime_soc is not None and soc_confidence > 0.6:
@@ -465,6 +475,39 @@ class EcoliteManager:
 
                 # Calculate target amps based on current policy
                 ev_amps = self.ev_controller.calculate_charging_amps(metrics)
+
+                # Execute actual charging control if not in dry-run mode
+                if not self.dry_run and self.tesla_controller:
+                    try:
+                        control_result = await self.tesla_controller.execute_charging_control(
+                            ev_amps
+                        )
+
+                        # Log control actions taken
+                        if control_result["actions_taken"]:
+                            for action in control_result["actions_taken"]:
+                                logger.info(f"🔋 TESLA CONTROL: {action}")
+
+                        # Log warnings
+                        if control_result["warnings"]:
+                            for warning in control_result["warnings"]:
+                                logger.warning(f"⚠️  TESLA CONTROL: {warning}")
+
+                        # Log errors with detailed explanations
+                        if control_result["errors"]:
+                            for error in control_result["errors"]:
+                                logger.error(f"❌ TESLA CONTROL: {error}")
+                                # Log detailed explanation for user-facing errors
+                                if self.tesla_controller:
+                                    explanation = (
+                                        self.tesla_controller._get_detailed_error_explanation(error)
+                                    )
+                                    logger.info(f"💡 HELP: {explanation}")
+
+                    except Exception as e:
+                        logger.error(f"Error in Tesla charging control: {e}")
+                elif self.dry_run:
+                    logger.debug(f"DRY-RUN: Would set Tesla charging to {ev_amps}A")
 
             # Log essential stats for EV charging optimization - always show both sections
             home_stats = []  # Home energy system stats
@@ -539,6 +582,34 @@ class EcoliteManager:
                 charging_info = battery_data.get("charging_rate_pct_per_hour", 0)
                 if abs(charging_info) > 0.1:
                     estimates.append(f"ChargeRate:{charging_info:+.1f}%/h")
+
+                # Add time to target SOC based on charging/discharging state
+                if self.battery_poller and self.battery_instance and battery_power is not None:
+                    if battery_power > 10:  # Charging
+                        # Show time to 100% when charging
+                        time_to_full = (
+                            self.battery_poller.realtime_soc_estimator.get_time_to_target_soc(100)
+                        )
+                        if time_to_full is not None and time_to_full > 0:
+                            if time_to_full < 1:
+                                minutes = int(time_to_full * 60)
+                                estimates.append(f"To100%:{minutes}min")
+                            else:
+                                estimates.append(f"To100%:{time_to_full:.1f}h")
+                    elif battery_power < -10:  # Discharging
+                        # Show time to emergency reserve when discharging
+                        reserve_soc = self.battery_instance.get("target_soc_percent", 20)
+                        time_to_reserve = (
+                            self.battery_poller.realtime_soc_estimator.get_time_to_target_soc(
+                                reserve_soc
+                            )
+                        )
+                        if time_to_reserve is not None and time_to_reserve > 0:
+                            if time_to_reserve < 1:
+                                minutes = int(time_to_reserve * 60)
+                                estimates.append(f"To{reserve_soc}%:{minutes}min")
+                            else:
+                                estimates.append(f"To{reserve_soc}%:{time_to_reserve:.1f}h")
 
             # EV charging target calculation
             if self.ev_controller.is_enabled():

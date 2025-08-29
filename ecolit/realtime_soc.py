@@ -227,6 +227,53 @@ class RealtimeSoCEstimator:
             "is_discharging": avg_power_w < -10,
         }
 
+    def get_time_to_target_soc(
+        self, target_soc_percent: float, force_discharge: bool = False
+    ) -> float | None:
+        """Calculate time to reach target SOC percentage.
+
+        Args:
+            target_soc_percent: Target SOC percentage (0-100)
+            force_discharge: If True, calculate for discharge even if charging
+
+        Returns:
+            Time to target in hours, or None if cannot estimate
+        """
+        if len(self.power_history) < 2:
+            return None
+
+        # Calculate recent average power (last 5 readings)
+        recent_powers = [p for t, p in self.power_history[-5:]]
+        avg_power_w = sum(recent_powers) / len(recent_powers)
+
+        # Skip if power is too small to calculate meaningful time
+        if abs(avg_power_w) <= 10:
+            return None
+
+        # Convert to SoC change rate (%/hour)
+        soc_rate_percent_per_hour = (avg_power_w / self.battery_capacity_wh) * 100
+
+        # Get current SOC estimate
+        current_estimate = self.get_estimated_soc()
+        if current_estimate.estimated_soc is None:
+            return None
+
+        # For charging (positive power): calculate time to reach higher target
+        if avg_power_w > 10 and not force_discharge:
+            remaining_percent = target_soc_percent - current_estimate.estimated_soc
+            if remaining_percent <= 0:
+                return 0.0  # Already at or above target
+            return remaining_percent / soc_rate_percent_per_hour
+
+        # For discharging (negative power): calculate time to reach lower target
+        elif avg_power_w < -10:
+            remaining_percent = current_estimate.estimated_soc - target_soc_percent
+            if remaining_percent <= 0:
+                return 0.0  # Already at or below target
+            return remaining_percent / abs(soc_rate_percent_per_hour)
+
+        return None
+
     def get_status_summary(self) -> dict[str, Any]:
         """Get comprehensive status summary for logging/debugging.
 

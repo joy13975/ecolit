@@ -14,7 +14,8 @@ help:
 	@echo "  make tesla-refresh  - Refresh tokens and verify registration (ongoing)"
 	@echo "  make lint        - Run ruff linter"
 	@echo "  make format      - Format code with ruff"
-	@echo "  make run         - Run the main application"
+	@echo "  make run         - Run the main application in control mode"
+	@echo "  make run --dry   - Run in dry-run mode (monitoring only)"
 	@echo "  make stop        - Stop any running ecolit processes"
 	@echo "  make scan        - Scan for ECHONET Lite devices"
 	@echo "  make clean       - Clean cache and build files"
@@ -41,7 +42,11 @@ format:
 	uv run ruff check --fix .
 
 run:
-	uv run python -m ecolit
+	uv run python -m ecolit $(filter-out $@,$(MAKECMDGOALS))
+
+# Handle --dry flag for make run --dry
+--dry:
+	@:
 
 scan:
 	uv run python scan.py

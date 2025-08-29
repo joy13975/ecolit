@@ -332,9 +332,9 @@ class BatteryDevicePoller(DevicePollerBase):
 
                         if (
                             a0_val
-                            and isinstance(a0_val, (int, float))
+                            and isinstance(a0_val, int | float)
                             and a1_val
-                            and isinstance(a1_val, (int, float))
+                            and isinstance(a1_val, int | float)
                         ):
                             # Use average of charging and discharging capacities as denominator
                             effective_capacity_wh = (a0_val + a1_val) / 2

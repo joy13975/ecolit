@@ -1,5 +1,6 @@
 """Main entry point for Ecolit application."""
 
+import argparse
 import asyncio
 import logging
 from typing import NoReturn
@@ -31,12 +32,33 @@ for handler in root_logger.handlers:
 logger = logging.getLogger(__name__)
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Ecolit - Smart home energy monitoring and EV charging control",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--dry",
+        action="store_true",
+        help="Run in dry-run mode (monitoring only, no charging control)",
+    )
+    return parser.parse_args()
+
+
 async def main() -> NoReturn:
     """Main application loop."""
-    logger.info("Starting Ecolit application")
+    # Parse command line arguments
+    args = parse_args()
+
+    # Log mode information
+    if args.dry:
+        logger.info("Starting Ecolit application in DRY-RUN mode (monitoring only)")
+    else:
+        logger.info("Starting Ecolit application in CONTROL mode (actual charging control)")
 
     config = load_config()
-    manager = EcoliteManager(config)
+    manager = EcoliteManager(config, dry_run=args.dry)
 
     try:
         await manager.start()

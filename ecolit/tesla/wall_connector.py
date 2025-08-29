@@ -119,7 +119,7 @@ def format_wall_connector_status(vitals: dict[str, Any], lifetime: dict[str, Any
 
     # Connection status
     vehicle_connected = vitals.get("vehicle_connected", False)
-    contactor_closed = vitals.get("contactor_closed", False)
+    vitals.get("contactor_closed", False)
 
     # For Tesla Wall Connector, determine actual charging more carefully
     # The Wall Connector can report stale current readings, so we need multiple indicators

@@ -286,6 +286,56 @@ async def show_current_status(client: TeslaAPIClient):
         print("   Check that Tesla API token has energy_device_data scope")
 
 
+async def start_charging_interactive(client: TeslaAPIClient):
+    """Start charging."""
+    print("\n" + "=" * 60)
+    print("⚡ START CHARGING")
+    print("=" * 60)
+
+    # Ensure vehicle is awake
+    if not await ensure_vehicle_awake_for_command(client, "start charging"):
+        return
+
+    print("\n🚀 Starting charging...")
+
+    try:
+        success = await client.charge_start()
+
+        if success:
+            print("✅ Charging started successfully")
+        else:
+            print("❌ Failed to start charging")
+            print("💡 Check if vehicle is plugged in and ready to charge")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
+async def stop_charging_interactive(client: TeslaAPIClient):
+    """Stop charging."""
+    print("\n" + "=" * 60)
+    print("🛑 STOP CHARGING")
+    print("=" * 60)
+
+    # Ensure vehicle is awake
+    if not await ensure_vehicle_awake_for_command(client, "stop charging"):
+        return
+
+    print("\n🛑 Stopping charging...")
+
+    try:
+        success = await client.charge_stop()
+
+        if success:
+            print("✅ Charging stopped successfully")
+        else:
+            print("❌ Failed to stop charging")
+            print("💡 Vehicle may not be charging")
+
+    except Exception as e:
+        print(f"❌ Error: {e}")
+
+
 async def set_charging_amps_interactive(client: TeslaAPIClient):
     """Interactively set charging amperage."""
     print("\n" + "=" * 60)
@@ -375,21 +425,27 @@ async def main_menu(client: TeslaAPIClient):
         print("=" * 60)
         print("1. Show current status (vehicle, schedule & Wall Connector)")
         print("2. Set charging amperage")
-        print("3. Exit")
+        print("3. Start charging")
+        print("4. Stop charging")
+        print("5. Exit")
         print()
 
         try:
-            choice = input("Select option (1-3): ").strip()
+            choice = input("Select option (1-5): ").strip()
 
             if choice == "1":
                 await show_current_status(client)
             elif choice == "2":
                 await set_charging_amps_interactive(client)
             elif choice == "3":
+                await start_charging_interactive(client)
+            elif choice == "4":
+                await stop_charging_interactive(client)
+            elif choice == "5":
                 print("👋 Goodbye!")
                 break
             else:
-                print("❌ Invalid choice, please select 1-3")
+                print("❌ Invalid choice, please select 1-5")
 
         except KeyboardInterrupt:
             print("\n👋 Goodbye!")
