@@ -129,8 +129,15 @@ class SolarDevicePoller(DevicePollerBase):
                 solar_device, SolarEPC.GRID_POWER_FLOW, description="Grid power flow"
             )
             if grid_flow_val is not None:
-                result["grid_power_flow"] = grid_flow_val
-                logger.debug(f"Grid power flow reading successful: {grid_flow_val}W")
+                # Check for suspicious constant 100W reading (known faulty device)
+                if grid_flow_val == 100:
+                    # Silently ignore faulty reading - don't spam warnings
+                    result["grid_power_flow"] = None
+                    result["grid_power_flow_device_faulty"] = True
+                else:
+                    result["grid_power_flow"] = grid_flow_val
+                    result["grid_power_flow_device_faulty"] = False
+                logger.debug(f"Grid power flow reading: {grid_flow_val}W")
 
             # Read cumulative generation for reference
             import_total = await self._safe_property_read(
@@ -373,10 +380,6 @@ class BatteryDevicePoller(DevicePollerBase):
         if display_soc is not None:
             return display_soc
         elif technical_soc is not None:
-            # Only show this warning once
-            if not self._technical_soc_warning_shown:
-                logger.warning("⚠️  Using technical SOC - display SOC unavailable via ECHONET")
-                self._technical_soc_warning_shown = True
             return technical_soc
 
         return None

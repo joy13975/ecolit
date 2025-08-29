@@ -17,6 +17,7 @@ ECHONET Lite is a communication protocol designed for smart home devices, partic
 - Instantaneous power generation: 0xE0
 - Cumulative power generation: 0xE1
 - Power generation status: 0x80
+- Grid power flow: 0xE5 ⚠️ **Known Issue: May return constant values on some devices**
 
 #### Storage Battery (0x027D)
 - Battery capacity: 0xE0
