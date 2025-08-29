@@ -43,6 +43,9 @@ class TeslaAPIClient:
         self.client_id = config.get("client_id")
         self.client_secret = config.get("client_secret")
 
+        # Token refresh state tracking
+        self._refresh_attempted = False
+
         # Vehicle configuration
         self.vehicle_id = config.get("vehicle_id")
         self.vehicle_tag = config.get("vehicle_tag")
@@ -173,6 +176,58 @@ class TeslaAPIClient:
                         access_token = result["access_token"]
                         logger.info("Tesla access token obtained successfully")
                         return access_token
+                    elif response.status == 401:
+                        error_text = await response.text()
+                        logger.error(
+                            f"Failed to get access token: {response.status} - {error_text}"
+                        )
+
+                        # Check if this is a complete token expiration requiring new OAuth
+                        if "login_required" in error_text:
+                            logger.warning(
+                                "🔑 Tesla refresh token completely expired - starting OAuth flow..."
+                            )
+
+                            # Automatically invoke the mint process
+                            if await self._mint_new_tokens():
+                                logger.info(
+                                    "✅ New Tesla tokens obtained - retrying authentication"
+                                )
+                                # Reload config with new tokens
+                                await self._reload_config()
+                                self._refresh_attempted = False  # Reset flag for new tokens
+                                return await self._get_access_token()
+                            else:
+                                logger.error(
+                                    "❌ Failed to obtain new Tesla tokens - Tesla data will be unavailable"
+                                )
+                                raise RuntimeError(f"Token mint failed: {response.status}")
+
+                        # Only attempt refresh once for other 401 errors
+                        if not self._refresh_attempted:
+                            logger.info(
+                                "🔄 Tesla access token expired - attempting automatic refresh..."
+                            )
+                            self._refresh_attempted = True
+
+                            # Attempt automatic token refresh
+                            if await self._refresh_tokens():
+                                logger.info(
+                                    "✅ Tesla tokens refreshed successfully - retrying authentication"
+                                )
+                                # Reload the refreshed token and retry
+                                await self._reload_config()
+                                return await self._get_access_token()
+                            else:
+                                logger.error(
+                                    "❌ Automatic token refresh failed - Tesla data will be unavailable"
+                                )
+                                raise RuntimeError(f"Token refresh failed: {response.status}")
+                        else:
+                            logger.error(
+                                "❌ Token refresh already attempted - Tesla data will be unavailable"
+                            )
+                            raise RuntimeError(f"Token refresh failed: {response.status}")
                     else:
                         error_text = await response.text()
                         logger.error(
@@ -183,6 +238,86 @@ class TeslaAPIClient:
         except Exception as e:
             logger.error(f"Failed to get Tesla access token: {e}")
             raise
+
+    async def _refresh_tokens(self) -> bool:
+        """Automatically refresh Tesla tokens by calling the refresh module."""
+        try:
+            # Import and call the refresh function directly
+            import sys
+            from pathlib import Path
+
+            # Add the project root to Python path to import tesla modules
+            project_root = Path(__file__).parent.parent.parent
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+
+            import yaml
+
+            from ecolit.tesla.refresh import refresh_user_token
+
+            # Load current config
+            config_path = project_root / "config.yaml"
+            if not config_path.exists():
+                logger.error("Config file not found for token refresh")
+                return False
+
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+
+            tesla_config = config.get("tesla", {})
+
+            # Attempt token refresh
+            success = await refresh_user_token(tesla_config, config, config_path)
+            return success
+
+        except Exception as e:
+            logger.error(f"Failed to automatically refresh Tesla tokens: {e}")
+            return False
+
+    async def _mint_new_tokens(self) -> bool:
+        """Automatically invoke the mint process to get new OAuth tokens."""
+        try:
+            from ecolit.tesla.mint import mint_tesla_tokens
+
+            # Run the existing mint process directly
+            success = await mint_tesla_tokens()
+
+            if success:
+                # Reload config after successful minting
+                await self._reload_config()
+                return True
+            else:
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to run Tesla mint process: {e}")
+            return False
+
+    async def _reload_config(self):
+        """Reload Tesla configuration after token refresh."""
+        try:
+            from pathlib import Path
+
+            import yaml
+
+            # Reload config file
+            project_root = Path(__file__).parent.parent.parent
+            config_path = project_root / "config.yaml"
+
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+
+            tesla_config = config.get("tesla", {})
+
+            # Update our stored tokens
+            self.refresh_token = tesla_config.get("refresh_token")
+            self.client_id = tesla_config.get("client_id")
+            self.client_secret = tesla_config.get("client_secret")
+
+            logger.debug("Tesla configuration reloaded after token refresh")
+
+        except Exception as e:
+            logger.error(f"Failed to reload Tesla configuration: {e}")
 
     async def get_vehicle_data(self) -> TeslaVehicleData:
         """Get current vehicle data."""
@@ -202,7 +337,7 @@ class TeslaAPIClient:
 
             # Convert miles to kilometers (1 mile = 1.60934 km)
             MILES_TO_KM = 1.60934
-            
+
             # Extract relevant data
             new_data = TeslaVehicleData(
                 battery_level=charge_state.get("battery_level"),
@@ -210,9 +345,15 @@ class TeslaAPIClient:
                 charge_amps=charge_state.get("charger_actual_current"),
                 charging_state=charge_state.get("charging_state"),
                 charge_port_status=charge_state.get("charge_port_door_open"),
-                battery_range=(charge_state.get("battery_range") * MILES_TO_KM) if charge_state.get("battery_range") else None,
-                ideal_battery_range=(charge_state.get("ideal_battery_range") * MILES_TO_KM) if charge_state.get("ideal_battery_range") else None,
-                est_battery_range=(charge_state.get("est_battery_range") * MILES_TO_KM) if charge_state.get("est_battery_range") else None,
+                battery_range=(charge_state.get("battery_range") * MILES_TO_KM)
+                if charge_state.get("battery_range")
+                else None,
+                ideal_battery_range=(charge_state.get("ideal_battery_range") * MILES_TO_KM)
+                if charge_state.get("ideal_battery_range")
+                else None,
+                est_battery_range=(charge_state.get("est_battery_range") * MILES_TO_KM)
+                if charge_state.get("est_battery_range")
+                else None,
                 timestamp=datetime.now(),
             )
 
@@ -223,7 +364,9 @@ class TeslaAPIClient:
                 f"Tesla data: SOC={new_data.battery_level}%, "
                 f"Power={new_data.charging_power}kW, "
                 f"State={new_data.charging_state}, "
-                f"Range={new_data.battery_range:.0f}km" if new_data.battery_range else "Tesla data: SOC={new_data.battery_level}%, Power={new_data.charging_power}kW, State={new_data.charging_state}"
+                f"Range={new_data.battery_range:.0f}km"
+                if new_data.battery_range
+                else "Tesla data: SOC={new_data.battery_level}%, Power={new_data.charging_power}kW, State={new_data.charging_state}"
             )
 
             return new_data
@@ -319,9 +462,15 @@ class TeslaAPIClient:
                 charge_amps=charge_state.get("charge_current_request"),
                 charging_state=charge_state.get("charging_state"),
                 charge_port_status=charge_state.get("charge_port_door_open"),
-                battery_range=(charge_state.get("battery_range") * MILES_TO_KM) if charge_state.get("battery_range") else None,
-                ideal_battery_range=(charge_state.get("ideal_battery_range") * MILES_TO_KM) if charge_state.get("ideal_battery_range") else None,
-                est_battery_range=(charge_state.get("est_battery_range") * MILES_TO_KM) if charge_state.get("est_battery_range") else None,
+                battery_range=(charge_state.get("battery_range") * MILES_TO_KM)
+                if charge_state.get("battery_range")
+                else None,
+                ideal_battery_range=(charge_state.get("ideal_battery_range") * MILES_TO_KM)
+                if charge_state.get("ideal_battery_range")
+                else None,
+                est_battery_range=(charge_state.get("est_battery_range") * MILES_TO_KM)
+                if charge_state.get("est_battery_range")
+                else None,
                 timestamp=datetime.now(),
             )
 

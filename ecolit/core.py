@@ -489,17 +489,6 @@ class EcoliteManager:
             else:
                 home_stats.append("Charging:N/A")
 
-            # Grid power flow
-            if grid_power_flow is not None:
-                if grid_power_flow > 0:
-                    home_stats.append(f"Grid:+{grid_power_flow:.0f}W")
-                elif grid_power_flow < 0:
-                    home_stats.append(f"Grid:{grid_power_flow:.0f}W")
-                else:
-                    home_stats.append("Grid:0W")
-            else:
-                home_stats.append("Grid:N/A")
-
             # Solar production
             if solar_power is not None:
                 home_stats.append(f"Solar:{solar_power}W")
