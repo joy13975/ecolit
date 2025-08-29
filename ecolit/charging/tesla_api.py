@@ -20,6 +20,9 @@ class TeslaVehicleData:
     charge_amps: float | None = None  # Current charging amperage
     charging_state: str | None = None  # "Charging", "Complete", "Stopped", etc.
     charge_port_status: str | None = None  # Charge port status
+    battery_range: float | None = None  # EPA rated range in km (converted from miles)
+    ideal_battery_range: float | None = None  # Ideal range in km (converted from miles)
+    est_battery_range: float | None = None  # Estimated range based on driving efficiency in km
     timestamp: datetime | None = None  # Data timestamp
 
 
@@ -197,6 +200,9 @@ class TeslaAPIClient:
             response = vehicle_data["response"]
             charge_state = response.get("charge_state", {})
 
+            # Convert miles to kilometers (1 mile = 1.60934 km)
+            MILES_TO_KM = 1.60934
+            
             # Extract relevant data
             new_data = TeslaVehicleData(
                 battery_level=charge_state.get("battery_level"),
@@ -204,6 +210,9 @@ class TeslaAPIClient:
                 charge_amps=charge_state.get("charger_actual_current"),
                 charging_state=charge_state.get("charging_state"),
                 charge_port_status=charge_state.get("charge_port_door_open"),
+                battery_range=(charge_state.get("battery_range") * MILES_TO_KM) if charge_state.get("battery_range") else None,
+                ideal_battery_range=(charge_state.get("ideal_battery_range") * MILES_TO_KM) if charge_state.get("ideal_battery_range") else None,
+                est_battery_range=(charge_state.get("est_battery_range") * MILES_TO_KM) if charge_state.get("est_battery_range") else None,
                 timestamp=datetime.now(),
             )
 
@@ -213,7 +222,8 @@ class TeslaAPIClient:
             logger.debug(
                 f"Tesla data: SOC={new_data.battery_level}%, "
                 f"Power={new_data.charging_power}kW, "
-                f"State={new_data.charging_state}"
+                f"State={new_data.charging_state}, "
+                f"Range={new_data.battery_range:.0f}km" if new_data.battery_range else "Tesla data: SOC={new_data.battery_level}%, Power={new_data.charging_power}kW, State={new_data.charging_state}"
             )
 
             return new_data
@@ -300,12 +310,18 @@ class TeslaAPIClient:
             response = vehicle_data_result.get("response", {})
             charge_state = response.get("charge_state", {})
 
+            # Convert miles to kilometers (1 mile = 1.60934 km)
+            MILES_TO_KM = 1.60934
+
             vehicle_data = TeslaVehicleData(
                 battery_level=charge_state.get("battery_level"),
                 charging_power=charge_state.get("charger_power"),
                 charge_amps=charge_state.get("charge_current_request"),
                 charging_state=charge_state.get("charging_state"),
                 charge_port_status=charge_state.get("charge_port_door_open"),
+                battery_range=(charge_state.get("battery_range") * MILES_TO_KM) if charge_state.get("battery_range") else None,
+                ideal_battery_range=(charge_state.get("ideal_battery_range") * MILES_TO_KM) if charge_state.get("ideal_battery_range") else None,
+                est_battery_range=(charge_state.get("est_battery_range") * MILES_TO_KM) if charge_state.get("est_battery_range") else None,
                 timestamp=datetime.now(),
             )
 

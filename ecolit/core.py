@@ -401,10 +401,12 @@ class EcoliteManager:
                 else:
                     battery_soc = official_soc
 
-            # Poll Tesla car data for actual charging power and EV SOC
+            # Poll Tesla car data for actual charging power, EV SOC, and range
             tesla_car_charging_power = None
             tesla_car_soc = None
             tesla_car_charging_state = None
+            tesla_car_range = None
+            tesla_car_est_range = None
             if self.tesla_client and self.tesla_client.is_enabled():
                 try:
                     tesla_vehicle_data = await self.tesla_client.get_vehicle_data()
@@ -412,23 +414,29 @@ class EcoliteManager:
                         tesla_car_charging_power = tesla_vehicle_data.charging_power  # kW
                         tesla_car_soc = tesla_vehicle_data.battery_level  # %
                         tesla_car_charging_state = tesla_vehicle_data.charging_state
+                        tesla_car_range = tesla_vehicle_data.battery_range  # km (EPA rated)
+                        tesla_car_est_range = tesla_vehicle_data.est_battery_range  # km (based on driving)
                         logger.debug(
-                            f"Tesla car: SOC={tesla_car_soc}%, Power={tesla_car_charging_power}kW, State={tesla_car_charging_state}"
+                            f"Tesla car: SOC={tesla_car_soc}%, Power={tesla_car_charging_power}kW, "
+                            f"State={tesla_car_charging_state}, Range={tesla_car_range:.0f}km" if tesla_car_range 
+                            else f"Tesla car: SOC={tesla_car_soc}%, Power={tesla_car_charging_power}kW, State={tesla_car_charging_state}"
                         )
                 except Exception as e:
                     logger.debug(f"Tesla car data unavailable: {e}")
 
-            # Poll Wall Connector data for actual power consumption
+            # Poll Wall Connector data for actual power consumption and current
             wall_connector_power = None
+            wall_connector_amps = None
             if self.wall_connector_client:
                 try:
                     vitals = await self.wall_connector_client.get_vitals()
                     if vitals:
-                        # Calculate actual power from voltage and current
+                        # Get actual current and voltage
                         vehicle_current = vitals.get("vehicle_current_a", 0)
                         grid_voltage = vitals.get("grid_v", 0)
                         if vehicle_current and grid_voltage:
                             wall_connector_power = (vehicle_current * grid_voltage) / 1000  # kW
+                            wall_connector_amps = vehicle_current  # Store actual amps for display
                         logger.debug(
                             f"Wall Connector: {vehicle_current}A @ {grid_voltage}V = {wall_connector_power}kW"
                         )
@@ -449,69 +457,83 @@ class EcoliteManager:
                 # Calculate target amps based on current policy
                 ev_amps = self.ev_controller.calculate_charging_amps(metrics)
 
-            # Log essential stats for EV charging optimization in one consolidated line
+            # Log essential stats for EV charging optimization - split into observed and estimated
             if battery_soc is not None or solar_power is not None or grid_power_flow is not None:
-                essential_stats = []
+                observed_stats = []  # Actual measured values
+                estimated_stats = []  # Calculated/estimated values
 
-                # Battery SOC - ALWAYS show both official and real-time
-                if battery_soc is not None:
-                    if realtime_soc is not None and battery_data:
-                        # Add charging rate if available
-                        charging_info = battery_data.get("charging_rate_pct_per_hour", 0)
-                        rt_charging_txt = ""
-                        if abs(charging_info) > 0.1:
-                            rt_charging_txt = f"@{charging_info:+.1f}%/h"
-                        # Show both official and real-time SoC values
-                        soc_display = (
-                            f"HomeSOC:{official_soc:.1f}% (RT:{realtime_soc:.2f}%{rt_charging_txt})"
-                        )
-                    else:
-                        # Fallback to single SoC value
-                        soc_display = f"HomeSOC:{battery_soc:.1f}%"
-
-                    essential_stats.append(soc_display)
+                # === OBSERVED VALUES ===
+                
+                # Battery SOC - official reading
+                if official_soc is not None:
+                    observed_stats.append(f"HomeSOC:{official_soc:.1f}%")
 
                 # Battery power flow (+ charging, - discharging)
                 if battery_power is not None:
                     if battery_power > 0:
-                        essential_stats.append(f"HomeCharging:+{battery_power}W")
+                        observed_stats.append(f"HomeCharging:+{battery_power}W")
                     elif battery_power < 0:
-                        essential_stats.append(f"HomeCharging:{battery_power}W")
+                        observed_stats.append(f"HomeCharging:{battery_power}W")
                     else:
-                        essential_stats.append("HomeCharging:0W")
+                        observed_stats.append("HomeCharging:0W")
 
                 # Grid power flow (+ import, - export)
                 if grid_power_flow is not None:
                     if grid_power_flow > 0:
-                        essential_stats.append(f"Grid:+{grid_power_flow}W")
+                        observed_stats.append(f"Grid:+{grid_power_flow}W")
                     elif grid_power_flow < 0:
-                        essential_stats.append(f"Grid:{grid_power_flow}W")
+                        observed_stats.append(f"Grid:{grid_power_flow}W")
                     else:
-                        essential_stats.append("Grid:0W")
+                        observed_stats.append("Grid:0W")
 
                 # Solar production
                 if solar_power is not None:
-                    essential_stats.append(f"Solar:{solar_power}W")
+                    observed_stats.append(f"Solar:{solar_power}W")
 
-                # EV charging status
-                if self.ev_controller.is_enabled():
-                    policy_name = self.ev_controller.get_current_policy()
-                    essential_stats.append(f"EV:{ev_amps}A({policy_name})")
+                # Tesla car SOC and range
+                if tesla_car_soc is not None:
+                    soc_str = f"EVSOC:{tesla_car_soc}%"
+                    # Add range if available
+                    if tesla_car_range is not None:
+                        soc_str += f"/{tesla_car_range:.0f}km"
+                    observed_stats.append(soc_str)
 
                 # Tesla car charging power (actual power from Fleet API)
                 if tesla_car_charging_power is not None and tesla_car_charging_power > 0:
-                    essential_stats.append(f"EVPWR:{tesla_car_charging_power:.1f}kW")
+                    observed_stats.append(f"EVCharging:{tesla_car_charging_power:.1f}kW")
                 elif tesla_car_charging_state:
                     # Show charging state even if no power data
-                    essential_stats.append(f"EVPWR:0kW({tesla_car_charging_state})")
+                    observed_stats.append(f"EVCharging:0kW({tesla_car_charging_state})")
 
-                # Tesla car SOC
-                if tesla_car_soc is not None:
-                    essential_stats.append(f"EVSOC:{tesla_car_soc}%")
+                # Wall Connector actual current
+                if wall_connector_amps is not None and wall_connector_amps > 0:
+                    observed_stats.append(f"EVAmps:{wall_connector_amps:.1f}A")
 
                 # Wall Connector power consumption
                 if wall_connector_power is not None and wall_connector_power > 0:
-                    essential_stats.append(f"WC:{wall_connector_power:.1f}kW")
+                    observed_stats.append(f"WallConn:{wall_connector_power:.1f}kW")
+
+                # === ESTIMATED VALUES ===
+                
+                # Real-time battery SOC estimate
+                if realtime_soc is not None and battery_data:
+                    # Add charging rate if available
+                    charging_info = battery_data.get("charging_rate_pct_per_hour", 0)
+                    rt_charging_txt = ""
+                    if abs(charging_info) > 0.1:
+                        rt_charging_txt = f"@{charging_info:+.1f}%/h"
+                    estimated_stats.append(f"HomeSOC_RT:{realtime_soc:.2f}%{rt_charging_txt}")
+
+                # EV charging target calculation
+                if self.ev_controller.is_enabled():
+                    policy_name = self.ev_controller.get_current_policy()
+                    estimated_stats.append(f"SurplusEVAmps:{ev_amps}A({policy_name})")
+                
+                # Tesla estimated range (if significantly different from EPA range)
+                if tesla_car_est_range is not None and tesla_car_range is not None:
+                    # Show estimated range if it differs by more than 10% from EPA range
+                    if abs(tesla_car_est_range - tesla_car_range) / tesla_car_range > 0.1:
+                        estimated_stats.append(f"EVRange_Est:{tesla_car_est_range:.0f}km")
 
                 # Calculate and display house load estimate
                 house_load = None
@@ -546,13 +568,16 @@ class EcoliteManager:
                     )
 
                     if house_load >= 0:
-                        essential_stats.append(f"HouseLoad:{house_load:.0f}W({confidence})")
+                        estimated_stats.append(f"HouseLoad:{house_load:.0f}W({confidence})")
                     else:
                         # Negative house load indicates calculation error or unusual situation
-                        essential_stats.append(f"HouseLoad:?W({confidence})")
+                        estimated_stats.append(f"HouseLoad:?W({confidence})")
 
-                # Log the consolidated essential stats
-                logger.info("⚡ " + " ".join(essential_stats))
+                # Log the observed and estimated stats on separate lines
+                if observed_stats:
+                    logger.info("📊 " + " ".join(observed_stats))
+                if estimated_stats:
+                    logger.info("📈 " + " ".join(estimated_stats))
 
                 # Log metrics to CSV file
                 if self.ev_controller.is_enabled():
@@ -573,7 +598,10 @@ class EcoliteManager:
                         "tesla_car_soc": tesla_car_soc,
                         "tesla_car_charging_power": tesla_car_charging_power,
                         "tesla_car_charging_state": tesla_car_charging_state,
+                        "tesla_car_range_km": tesla_car_range,
+                        "tesla_car_est_range_km": tesla_car_est_range,
                         "wall_connector_power": wall_connector_power,
+                        "wall_connector_amps": wall_connector_amps,
                         "house_load_estimate": house_load,
                         "house_load_confidence": confidence,
                     }
