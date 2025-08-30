@@ -31,7 +31,7 @@ class TeslaChargingController:
         self._schedule_cache = {}
         self._schedule_cache_time = 0
         self._schedule_cache_ttl = 900  # 15 minutes (was 5 minutes)
-        
+
         # Vehicle data cache to minimize API calls
         self._vehicle_data_cache = None
         self._vehicle_data_cache_time = 0
@@ -76,16 +76,23 @@ class TeslaChargingController:
                 # Get fresh data after wake-up (force refresh)
                 vehicle_data, _ = await self._get_cached_vehicle_data(force_refresh=True)
 
-            # Step 2: Validate charging conditions
-            validation_result = await self._validate_charging_conditions(vehicle_data)
-            if not validation_result["can_charge"]:
-                result["errors"].extend(validation_result["errors"])
-                if validation_result["warnings"]:
-                    result["warnings"].extend(validation_result["warnings"])
+            # Step 2: Basic connection validation (always required)
+            basic_validation = await self._validate_basic_charging_conditions(vehicle_data)
+            if not basic_validation["can_charge"]:
+                result["errors"].extend(basic_validation["errors"])
+                if basic_validation["warnings"]:
+                    result["warnings"].extend(basic_validation["warnings"])
                 return result
 
             # Step 3: Handle charging state
             if target_amps > 0:
+                # Only validate schedule when trying to start/increase charging
+                schedule_validation = await self._validate_schedule_conditions(vehicle_data)
+                if not schedule_validation["can_charge"]:
+                    result["errors"].extend(schedule_validation["errors"])
+                    if schedule_validation["warnings"]:
+                        result["warnings"].extend(schedule_validation["warnings"])
+                    return result
                 # We want to charge
                 charge_result = await self._ensure_charging_started(vehicle_data)
                 if charge_result["action_taken"]:
@@ -94,15 +101,15 @@ class TeslaChargingController:
                     result["warnings"].extend(charge_result["warnings"])
 
                 # Set target amperage (only if different from current)
-                current_amps = getattr(vehicle_data, 'charge_amps', None)
-                
+                current_amps = getattr(vehicle_data, "charge_amps", None)
+
                 # Compare with tolerance since current_amps may be float, target_amps is int
                 needs_change = True
                 if current_amps is not None:
                     # Allow 0.5A tolerance (Tesla reports actual measured amps, not requested)
                     amps_diff = abs(current_amps - target_amps)
                     needs_change = amps_diff > 0.5
-                
+
                 if needs_change:
                     amps_result = await self._set_charging_amps(target_amps)
                     if amps_result["success"]:
@@ -134,30 +141,32 @@ class TeslaChargingController:
 
     async def _get_cached_vehicle_data(self, force_refresh: bool = False) -> tuple[Any, bool]:
         """Get vehicle data with caching to minimize API calls.
-        
+
         Args:
             force_refresh: Force a fresh API call even if cache is valid
-            
+
         Returns:
             Tuple of (vehicle_data, was_sleeping)
         """
         current_time = time.time()
-        
+
         # Use cache if valid and not forcing refresh
-        if (not force_refresh and 
-            self._vehicle_data_cache is not None and
-            (current_time - self._vehicle_data_cache_time) < self._vehicle_data_cache_ttl):
+        if (
+            not force_refresh
+            and self._vehicle_data_cache is not None
+            and (current_time - self._vehicle_data_cache_time) < self._vehicle_data_cache_ttl
+        ):
             logger.debug("Using cached vehicle data to avoid API call")
             return self._vehicle_data_cache, False
-        
+
         # Need fresh data - make API call
         logger.debug("Refreshing vehicle data from Tesla API")
         vehicle_data, was_sleeping = await self.tesla_client.poll_vehicle_data_with_wake_option()
-        
+
         # Cache the result
         self._vehicle_data_cache = vehicle_data
         self._vehicle_data_cache_time = current_time
-        
+
         return vehicle_data, was_sleeping
 
     async def _handle_wake_up(self) -> dict[str, Any]:
@@ -216,8 +225,8 @@ class TeslaChargingController:
 
         return "An unexpected error occurred during charging control."
 
-    async def _validate_charging_conditions(self, vehicle_data) -> dict[str, Any]:
-        """Validate if charging is possible and allowed."""
+    async def _validate_basic_charging_conditions(self, vehicle_data) -> dict[str, Any]:
+        """Validate basic charging conditions (connection, etc.) - always required."""
         result = {"can_charge": False, "errors": [], "warnings": []}
 
         try:
@@ -229,6 +238,19 @@ class TeslaChargingController:
                 result["errors"].append("🔌 Charger not connected")
                 return result
 
+            result["can_charge"] = True
+
+        except Exception as e:
+            logger.error(f"Error validating basic charging conditions: {e}")
+            result["errors"].append(f"Basic validation error: {e}")
+
+        return result
+
+    async def _validate_schedule_conditions(self, vehicle_data) -> dict[str, Any]:
+        """Validate schedule conditions - only for starting/increasing charging."""
+        result = {"can_charge": False, "errors": [], "warnings": []}
+
+        try:
             # Get Tesla charging schedule
             schedule_data = await self._get_cached_schedule()
             schedule_result = self._check_tesla_schedule(schedule_data)
@@ -250,8 +272,8 @@ class TeslaChargingController:
             result["can_charge"] = True
 
         except Exception as e:
-            logger.error(f"Error validating charging conditions: {e}")
-            result["errors"].append(f"Validation error: {e}")
+            logger.error(f"Error validating schedule conditions: {e}")
+            result["errors"].append(f"Schedule validation error: {e}")
 
         return result
 
