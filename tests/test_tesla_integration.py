@@ -185,9 +185,10 @@ async def test_tesla_charging_integration_pipeline_starts_charging():
         actual_amps = call_args[0][0] if call_args[0] else call_args[1].get("amps")
 
         # With home battery at 99.5% and charging at 300W, ECO policy should increase EV charging
-        # ECO policy increases by 1A step when home battery is charging > 100W threshold
-        assert 1 <= actual_amps <= 5, (
-            f"Expected 1-5A increase when home battery charging at 300W, got {actual_amps}A. "
+        # ECO policy starts at 6A (Tesla minimum) and increases by 1A step when home battery is charging > 100W threshold
+        # So we expect 6A (minimum) + 1A (step) = 7A
+        assert 6 <= actual_amps <= 8, (
+            f"Expected 6-8A (Tesla min 6A + 1A ECO step), got {actual_amps}A. "
             f"Energy: solar={mock_solar_data['solar_power']}W, battery_charge={mock_battery_data['battery_power']}W"
         )
 

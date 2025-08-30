@@ -87,7 +87,18 @@ class EcoPolicy(ChargingPolicy):
             )
             return 0  # Stop charging to prioritize home battery
 
-        # At target SOC - use battery power flow to control EV charging
+        # CRITICAL: Above 99% SOC, aggressively increase EV charging
+        # This prevents battery from hitting 100% where it stops accepting charge
+        # and we lose visibility of surplus solar
+        if metrics.battery_soc >= 99.0:
+            # Battery is nearly full - increase EV charging to pull it down
+            target_amps = min(self.max_amps, current_amps + self.amp_step)
+            logger.debug(
+                f"ECO: Battery SOC {metrics.battery_soc:.1f}% ≥ 99%, increasing EV to {target_amps}A to prevent battery saturation"
+            )
+            return target_amps
+
+        # Between target (98.5%) and 99% - use battery power flow to control EV charging
         target_amps = current_amps
 
         if metrics.battery_power > self.battery_charging_threshold:
