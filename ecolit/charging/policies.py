@@ -61,7 +61,7 @@ class EcoPolicy(ChargingPolicy):
         eco_config = config.get("eco", {})
 
         # Simple battery feedback control parameters
-        self.target_battery_soc = eco_config.get("target_soc", 99.0)  # Default 99%
+        self.target_battery_soc = eco_config.get("target_soc", 98.5)  # Default 98.5%
 
         # Common battery feedback parameters (shared across all policies)
         self.battery_charging_threshold = config.get(
@@ -87,14 +87,13 @@ class EcoPolicy(ChargingPolicy):
             )
             return 0  # Stop charging to prioritize home battery
 
-        # CRITICAL: Above 99% SOC, aggressively increase EV charging
+        # CRITICAL: Above 99% SOC, immediately jump to max amps
         # This prevents battery from hitting 100% where it stops accepting charge
-        # and we lose visibility of surplus solar
+        # Battery feedback will naturally regulate down if we're drawing too much
         if metrics.battery_soc >= 99.0:
-            # Battery is nearly full - increase EV charging to pull it down
-            target_amps = min(self.max_amps, current_amps + self.amp_step)
+            target_amps = self.max_amps
             logger.debug(
-                f"ECO: Battery SOC {metrics.battery_soc:.1f}% ≥ 99%, increasing EV to {target_amps}A to prevent battery saturation"
+                f"ECO: Battery SOC {metrics.battery_soc:.1f}% ≥ 99%, max EV charging {target_amps}A - battery feedback will regulate"
             )
             return target_amps
 

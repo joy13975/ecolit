@@ -27,10 +27,15 @@ class TeslaChargingController:
         self.charge_command_interval = 10  # Don't start/stop more than once per 10s
         self.amps_command_interval = 30  # Don't change amps more than once per 30s
 
-        # Tesla schedule cache
+        # Tesla schedule cache - schedule data changes rarely
         self._schedule_cache = {}
         self._schedule_cache_time = 0
-        self._schedule_cache_ttl = 300  # 5 minutes
+        self._schedule_cache_ttl = 900  # 15 minutes (was 5 minutes)
+        
+        # Vehicle data cache to minimize API calls
+        self._vehicle_data_cache = None
+        self._vehicle_data_cache_time = 0
+        self._vehicle_data_cache_ttl = 30  # 30 seconds - only refresh when needed
 
         logger.info("Tesla charging controller initialized")
 
@@ -55,11 +60,8 @@ class TeslaChargingController:
         }
 
         try:
-            # Step 1: Get vehicle data and wake if needed
-            (
-                vehicle_data,
-                was_sleeping,
-            ) = await self.tesla_client.poll_vehicle_data_with_wake_option()
+            # Step 1: Get vehicle data with caching to minimize API calls
+            vehicle_data, was_sleeping = await self._get_cached_vehicle_data()
 
             if was_sleeping:
                 wake_result = await self._handle_wake_up()
@@ -71,8 +73,8 @@ class TeslaChargingController:
                 # Wait a moment for vehicle to fully wake
                 await self._sleep(3)
 
-                # Get fresh data after wake-up
-                vehicle_data, _ = await self.tesla_client.poll_vehicle_data_with_wake_option()
+                # Get fresh data after wake-up (force refresh)
+                vehicle_data, _ = await self._get_cached_vehicle_data(force_refresh=True)
 
             # Step 2: Validate charging conditions
             validation_result = await self._validate_charging_conditions(vehicle_data)
@@ -91,13 +93,26 @@ class TeslaChargingController:
                 if charge_result["warnings"]:
                     result["warnings"].extend(charge_result["warnings"])
 
-                # Set target amperage
-                amps_result = await self._set_charging_amps(target_amps)
-                if amps_result["success"]:
-                    result["actions_taken"].append(f"Set charging to {target_amps}A")
-                    result["success"] = True
+                # Set target amperage (only if different from current)
+                current_amps = getattr(vehicle_data, 'charge_amps', None)
+                
+                # Compare with tolerance since current_amps may be float, target_amps is int
+                needs_change = True
+                if current_amps is not None:
+                    # Allow 0.5A tolerance (Tesla reports actual measured amps, not requested)
+                    amps_diff = abs(current_amps - target_amps)
+                    needs_change = amps_diff > 0.5
+                
+                if needs_change:
+                    amps_result = await self._set_charging_amps(target_amps)
+                    if amps_result["success"]:
+                        result["actions_taken"].append(f"Set charging to {target_amps}A")
+                        result["success"] = True
+                    else:
+                        result["errors"].append(amps_result["error"])
                 else:
-                    result["errors"].append(amps_result["error"])
+                    result["success"] = True
+                    result["actions_taken"].append(f"Already at {target_amps}A (no change needed)")
             else:
                 # Target amps is 0, we want to stop
                 if vehicle_data.charging_state in ["Charging", "Starting"]:
@@ -116,6 +131,34 @@ class TeslaChargingController:
             result["errors"].append(f"Unexpected error: {e}")
 
         return result
+
+    async def _get_cached_vehicle_data(self, force_refresh: bool = False) -> tuple[Any, bool]:
+        """Get vehicle data with caching to minimize API calls.
+        
+        Args:
+            force_refresh: Force a fresh API call even if cache is valid
+            
+        Returns:
+            Tuple of (vehicle_data, was_sleeping)
+        """
+        current_time = time.time()
+        
+        # Use cache if valid and not forcing refresh
+        if (not force_refresh and 
+            self._vehicle_data_cache is not None and
+            (current_time - self._vehicle_data_cache_time) < self._vehicle_data_cache_ttl):
+            logger.debug("Using cached vehicle data to avoid API call")
+            return self._vehicle_data_cache, False
+        
+        # Need fresh data - make API call
+        logger.debug("Refreshing vehicle data from Tesla API")
+        vehicle_data, was_sleeping = await self.tesla_client.poll_vehicle_data_with_wake_option()
+        
+        # Cache the result
+        self._vehicle_data_cache = vehicle_data
+        self._vehicle_data_cache_time = current_time
+        
+        return vehicle_data, was_sleeping
 
     async def _handle_wake_up(self) -> dict[str, Any]:
         """Handle vehicle wake-up with rate limiting."""

@@ -239,10 +239,10 @@ class RealtimeSoCEstimator:
         Returns:
             Time to target in hours, or None if cannot estimate
         """
-        if len(self.power_history) < 2:
+        if len(self.power_history) < 1:
             return None
 
-        # Calculate recent average power (last 5 readings)
+        # Calculate recent average power (last 5 readings, or single reading if only one available)
         recent_powers = [p for t, p in self.power_history[-5:]]
         avg_power_w = sum(recent_powers) / len(recent_powers)
 
