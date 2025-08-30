@@ -37,6 +37,8 @@ class TestBatterySOCParsing:
                 0xBF: None,  # USER_DISPLAY_SOC returns None
                 0xC9: "0/5000",  # DISPLAY_SOC_ALT returns misleading string
                 0xE2: 5358,  # REMAINING_STORED_ELECTRICITY returns scaled value (53.58%)
+                0xA0: 10000,  # AC_CHARGING_CAPACITY in Wh
+                0xA1: 10000,  # AC_DISCHARGING_CAPACITY in Wh (average = 10000)
             }
             return responses.get(epc_code)
 
@@ -70,7 +72,11 @@ class TestBatterySOCParsing:
             call_count += 1
             if call_count <= 2:  # First two EPCs timeout
                 raise TimeoutError()
-            return 5358  # Third EPC succeeds
+            if epc_code == 0xE2:
+                return 5358  # Third EPC succeeds
+            elif epc_code in [0xA0, 0xA1]:
+                return 10000  # Capacity readings
+            return None
 
         battery_device.update = AsyncMock(side_effect=mock_update)
 

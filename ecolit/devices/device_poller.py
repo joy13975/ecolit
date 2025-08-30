@@ -399,15 +399,38 @@ class BatteryDevicePoller(DevicePollerBase):
 
     async def _read_battery_power(self, battery_device) -> int | None:
         """Read battery power flow (+ charging, - discharging)."""
-        # Primary power reading: charging/discharging amount
+        # Primary power reading: charging/discharging amount (EPC 0xD3)
         power_val = await self._safe_property_read(
             battery_device,
             BatteryEPC.CHARGING_DISCHARGING_AMOUNT,
             description="Battery charging/discharging amount",
         )
         if power_val is not None:
-            logger.debug(f"Battery primary power flow (0xD3): {power_val}W")
-            return power_val
+            # Convert bytes to signed integer if needed
+            if isinstance(power_val, bytes):
+                if len(power_val) == 4:  # 32-bit signed integer
+                    power_watts = int.from_bytes(power_val, byteorder="big", signed=True)
+                    logger.debug(
+                        f"Battery primary power flow (0xD3): {power_watts}W (from bytes: {power_val.hex()})"
+                    )
+                    return power_watts
+                elif len(power_val) == 2:  # 16-bit signed integer
+                    power_watts = int.from_bytes(power_val, byteorder="big", signed=True)
+                    logger.debug(
+                        f"Battery primary power flow (0xD3): {power_watts}W (from bytes: {power_val.hex()})"
+                    )
+                    return power_watts
+                else:
+                    logger.warning(
+                        f"Unexpected byte length for battery power: {len(power_val)} bytes: {power_val.hex()}"
+                    )
+            elif isinstance(power_val, int | float):
+                logger.debug(f"Battery primary power flow (0xD3): {power_val}W")
+                return int(power_val)
+            else:
+                logger.warning(
+                    f"Unexpected battery power value type: {type(power_val)} = {power_val}"
+                )
 
         # Alternative: separate charging/discharging power readings
         charge_val = await self._safe_property_read(
@@ -417,9 +440,20 @@ class BatteryDevicePoller(DevicePollerBase):
             battery_device, BatteryEPC.DISCHARGING_POWER, description="Battery discharging power"
         )
 
-        if charge_val and charge_val > 0:
+        # Handle charging power
+        if charge_val is not None and charge_val > 0:
             return charge_val
-        elif discharge_val and discharge_val > 0:
+
+        # Handle discharging power
+        if discharge_val is not None and discharge_val > 0:
             return -discharge_val  # Make discharge negative
-        else:
-            return 0
+
+        # If both readings exist but are 0, that might be valid (idle battery)
+        if charge_val is not None and discharge_val is not None:
+            return 0  # Battery is idle (neither charging nor discharging)
+
+        # If we can't read either value, return None
+        logger.warning(
+            f"Battery power readings unavailable: charge={charge_val}, discharge={discharge_val}"
+        )
+        return None

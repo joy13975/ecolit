@@ -9,7 +9,7 @@ from ecolit.charging.policies import EnergyMetrics
 class TestEVControllerCritical:
     """Test critical EV controller functionality that prevents dangerous behavior."""
 
-    def test_rate_limiting_prevents_frequent_changes(self, mock_config, energy_metrics_exporting):
+    def test_rate_limiting_prevents_frequent_changes(self, mock_config, energy_metrics_eco_ready):
         """Test that rate limiting prevents dangerous frequent charging adjustments."""
         controller = EVChargingController(mock_config)
 
@@ -17,17 +17,17 @@ class TestEVControllerCritical:
             mock_time.return_value = 1000.0
 
             # First calculation should work
-            amps1 = controller.calculate_charging_amps(energy_metrics_exporting)
+            amps1 = controller.calculate_charging_amps(energy_metrics_eco_ready)
             assert amps1 > 0
 
             # Immediate second calculation should be rate limited
             mock_time.return_value = 1010.0  # Only 10 seconds later
-            amps2 = controller.calculate_charging_amps(energy_metrics_exporting)
+            amps2 = controller.calculate_charging_amps(energy_metrics_eco_ready)
             assert amps2 == amps1  # Same as before due to rate limiting
 
             # After adjustment interval, should calculate new value
             mock_time.return_value = 1040.0  # 40 seconds later (> 30s interval)
-            controller.calculate_charging_amps(energy_metrics_exporting)
+            controller.calculate_charging_amps(energy_metrics_eco_ready)
             # Should potentially be different (not rate limited)
 
     def test_safety_max_amps_limit(self, mock_config):

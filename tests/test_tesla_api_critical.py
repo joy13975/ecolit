@@ -37,8 +37,10 @@ class TestTeslaAPICritical:
             return_value={"response": {"result": False, "reason": "vehicle_unavailable"}}
         )
 
-        mock_api.vehicles.specific.return_value = mock_vehicle_api
+        # Tesla API uses specificSigned() for TVCP commands
+        mock_api.vehicles.specificSigned.return_value = mock_vehicle_api
         client.api = mock_api
+        client.vin = "TEST_VIN_123"  # Required for TVCP commands
 
         # This should return False (not raise) when Tesla command fails
         result = await client.set_charging_amps(16)
@@ -94,8 +96,9 @@ class TestTeslaAPICritical:
             side_effect=Exception("Rate limit exceeded: 429 Too Many Requests")
         )
 
-        mock_api.vehicles.specific.return_value = mock_vehicle_api
+        mock_api.vehicles.specificSigned.return_value = mock_vehicle_api
         client.api = mock_api
+        client.vin = "TEST_VIN_123"  # Required for TVCP commands
 
         # Commands should return False when rate limited
         result = await client.set_charging_amps(16)
@@ -131,8 +134,9 @@ class TestTeslaAPICritical:
             return {"response": {"result": True}}
 
         mock_vehicle_api.set_charging_amps = mock_set_charging_amps
-        mock_api.vehicles.specific.return_value = mock_vehicle_api
+        mock_api.vehicles.specificSigned.return_value = mock_vehicle_api
         client.api = mock_api
+        client.vin = "TEST_VIN_123"  # Required for TVCP commands
 
         # Test dangerous amperage values are clamped
         dangerous_values = [0, -5, 50, 100, 999]

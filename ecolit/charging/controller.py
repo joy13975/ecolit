@@ -29,14 +29,15 @@ class EVChargingController:
         self.adjustment_interval = self.config.get("adjustment_interval", 30)  # seconds
         self.measurement_interval = self.config.get("measurement_interval", 10)  # seconds
 
-        # State tracking
-        self.current_amps = 0
-        self.target_amps = 0
-        self.last_adjustment_time = 0.0
-        self.last_measurement_time = 0.0
-
         # Safety limits
         self.max_amps = self.config.get("max_amps", 20)
+        self.min_amps = 6  # Tesla minimum charging amps
+
+        # State tracking - start at minimum amps, not 0
+        self.current_amps = self.min_amps  # Start at minimum viable charging level
+        self.target_amps = self.min_amps
+        self.last_adjustment_time = 0.0
+        self.last_measurement_time = 0.0
 
         logger.info(
             f"EV charging controller initialized: policy={self.policy.get_name()}, max_amps={self.max_amps}"
@@ -81,8 +82,12 @@ class EVChargingController:
         if self.should_adjust():
             self.target_amps = self.policy.calculate_target_amps(self.current_amps, metrics)
 
-            # Safety check - should never exceed max_amps
-            self.target_amps = max(0, min(self.target_amps, self.max_amps))
+            # Safety check - enforce min/max limits
+            # If target is between 1-5A, round to 0 (stop) or 6 (minimum)
+            if 0 < self.target_amps < self.min_amps:
+                self.target_amps = self.min_amps  # Round up to minimum
+            # Never exceed max_amps
+            self.target_amps = min(self.target_amps, self.max_amps)
 
             # Only update if there's a change
             if self.target_amps != self.current_amps:

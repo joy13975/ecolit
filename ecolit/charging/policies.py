@@ -79,31 +79,13 @@ class EcoPolicy(ChargingPolicy):
         self.export_threshold = eco_config.get("export_threshold", 50)
 
     def calculate_target_amps(self, current_amps: int, metrics: EnergyMetrics) -> int:
-        """ECO logic: Simple battery feedback control with fallback to grid flow."""
-        current_time = time.time()
-
-        # Use simple battery feedback control if we have battery data
-        if metrics.battery_soc is not None and metrics.battery_power is not None:
-            return self._simple_battery_feedback(current_amps, metrics, current_time)
-
-        # Fallback to legacy grid-flow based control
-        logger.debug("ECO: No battery data available, using legacy grid-flow control")
-        return self._legacy_grid_control(current_amps, metrics)
-
-    def _simple_battery_feedback(
-        self, current_amps: int, metrics: EnergyMetrics, current_time: float
-    ) -> int:
-        """Simple battery feedback control: When homeSOC ≥ 99%, respond to battery power flow."""
+        """Simple battery feedback control: When homeSOC ≥ target, respond to battery power flow."""
         # If battery SOC is below target, prioritize battery charging
         if metrics.battery_soc < self.target_battery_soc:
             logger.debug(
-                f"ECO: Battery SOC {metrics.battery_soc:.1f}% < {self.target_battery_soc}%, no EV charging"
+                f"ECO: Battery SOC {metrics.battery_soc:.1f}% < {self.target_battery_soc}%, stop EV charging"
             )
-            return 0
-
-        # Check if enough time has passed since last adjustment
-        if current_time - self.last_adjustment_time < self.adjustment_interval:
-            return current_amps
+            return 0  # Stop charging to prioritize home battery
 
         # At target SOC - use battery power flow to control EV charging
         target_amps = current_amps
@@ -115,18 +97,22 @@ class EcoPolicy(ChargingPolicy):
             reason = f"charging at {metrics.battery_power}W"
         elif metrics.battery_power < -self.battery_charging_threshold:
             # Home battery is discharging - reduce EV charging
-            target_amps = max(0, current_amps - self.amp_step)
-            action = "reduce"
+            # If we're at minimum, stop charging rather than going below minimum
+            if current_amps <= 6:  # Tesla minimum is 6A
+                target_amps = 0  # Stop charging
+                action = "stop"
+            else:
+                target_amps = max(6, current_amps - self.amp_step)  # Don't go below 6A
+                action = "reduce"
             reason = f"discharging at {metrics.battery_power}W"
         else:
             # Home battery is flat (within threshold) - keep current setting
             action = "maintain"
             reason = f"flat at {metrics.battery_power}W"
 
-        # Only log and update if there's a change
-        if target_amps != current_amps or action == "maintain":
+        # Log the decision
+        if target_amps != current_amps:
             logger.debug(f"ECO: Battery {reason}, {action} EV charging to {target_amps}A")
-            self.last_adjustment_time = current_time
 
         return target_amps
 
@@ -222,8 +208,13 @@ class HurryPolicy(ChargingPolicy):
             reason = f"charging at {metrics.battery_power}W"
         elif metrics.battery_power < -self.battery_charging_threshold:
             # Home battery is discharging - reduce EV charging
-            target_amps = max(0, current_amps - self.amp_step)
-            action = "reduce"
+            # If we're at minimum, stop charging rather than going below minimum
+            if current_amps <= 6:  # Tesla minimum is 6A
+                target_amps = 0  # Stop charging
+                action = "stop"
+            else:
+                target_amps = max(6, current_amps - self.amp_step)  # Don't go below 6A
+                action = "reduce"
             reason = f"discharging at {metrics.battery_power}W"
         else:
             # Home battery is flat (within threshold) - keep current setting

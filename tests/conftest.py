@@ -93,6 +93,17 @@ def energy_metrics_no_data() -> EnergyMetrics:
 
 
 @pytest.fixture
+def energy_metrics_eco_ready() -> EnergyMetrics:
+    """Energy metrics suitable for ECO policy (99%+ battery SOC)."""
+    return EnergyMetrics(
+        battery_soc=99.5,
+        battery_power=300,  # Charging
+        grid_power_flow=-400,  # Exporting 400W
+        solar_power=2000,
+    )
+
+
+@pytest.fixture
 def mock_echonet_api():
     """Mock ECHONET API client."""
     api_mock = MagicMock()
