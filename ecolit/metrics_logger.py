@@ -33,9 +33,9 @@ class MetricsLogger:
         metrics_dir = Path(folder_path)
         metrics_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate timestamp-based filename (YYYYMMDD_HHMMSS.csv)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{timestamp}.csv"
+        # Generate date-based filename (YYYYMMDD.csv)
+        date_str = datetime.now().strftime("%Y%m%d")
+        filename = f"{date_str}.csv"
         self.csv_file_path = metrics_dir / filename
 
         # Define CSV headers for EV charging metrics
@@ -64,13 +64,22 @@ class MetricsLogger:
         ]
 
         try:
-            # Open CSV file with unbuffered mode for immediate writes
-            self.csv_file = open(self.csv_file_path, "w", newline="", buffering=1)
+            # Check if file exists to determine if we should append or create new
+            file_exists = self.csv_file_path.exists()
+            
+            # Open CSV file in append mode if exists, write mode if new
+            mode = "a" if file_exists else "w"
+            self.csv_file = open(self.csv_file_path, mode, newline="", buffering=1)
             self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=self.csv_headers)
-            self.csv_writer.writeheader()
-            self.csv_file.flush()
+            
+            # Only write header if creating new file
+            if not file_exists:
+                self.csv_writer.writeheader()
+                self.csv_file.flush()
+                logger.info(f"Metrics logging initialized (new file): {self.csv_file_path}")
+            else:
+                logger.info(f"Metrics logging initialized (appending to existing): {self.csv_file_path}")
 
-            logger.info(f"Metrics logging initialized: {self.csv_file_path}")
         except Exception as e:
             logger.error(f"Failed to initialize metrics logging: {e}")
             self.csv_file = None
