@@ -61,6 +61,16 @@ class EcoliteManager:
             if wall_connector_ip:
                 self.wall_connector_client = WallConnectorClient(wall_connector_ip)
 
+        # Tesla state cache for display (synced every 10 minutes to reduce API calls)
+        self._cached_tesla_state = {
+            "soc": None,
+            "charging_state": None,
+            "range": None,
+            "est_range": None,
+            "last_update": 0,
+        }
+        self._tesla_display_sync_interval = 600  # 10 minutes
+
     async def start(self) -> None:
         """Start the ECHONET Lite manager."""
         logger.info("Starting ECHONET Lite manager")
@@ -412,33 +422,18 @@ class EcoliteManager:
                 else:
                     battery_soc = official_soc
 
-            # Poll Tesla car data for actual charging power, EV SOC, and range
+            # Sync Tesla display data every 10 minutes (instead of every 10 seconds)
+            await self._sync_tesla_display_data()
+
+            # Use cached Tesla data for display and Wall Connector for real-time charging data
             tesla_car_charging_power = None
-            tesla_car_soc = None
-            tesla_car_charging_state = None
-            tesla_car_range = None
-            tesla_car_est_range = None
-            if self.tesla_client and self.tesla_client.is_enabled():
-                try:
-                    tesla_vehicle_data = await self.tesla_client.get_vehicle_data()
-                    if tesla_vehicle_data and tesla_vehicle_data.timestamp:
-                        tesla_car_charging_power = tesla_vehicle_data.charging_power  # kW
-                        tesla_car_soc = tesla_vehicle_data.battery_level  # %
-                        tesla_car_charging_state = tesla_vehicle_data.charging_state
-                        tesla_car_range = tesla_vehicle_data.battery_range  # km (EPA rated)
-                        tesla_car_est_range = (
-                            tesla_vehicle_data.est_battery_range
-                        )  # km (based on driving)
-                        logger.debug(
-                            f"Tesla car: SOC={tesla_car_soc}%, Power={tesla_car_charging_power}kW, "
-                            f"State={tesla_car_charging_state}, Range={tesla_car_range:.0f}km"
-                            if tesla_car_range
-                            else f"Tesla car: SOC={tesla_car_soc}%, Power={tesla_car_charging_power}kW, State={tesla_car_charging_state}"
-                        )
-                except Exception as e:
-                    logger.debug(f"Tesla car data unavailable: {e}")
+            tesla_car_soc = self._cached_tesla_state["soc"]
+            tesla_car_charging_state = self._cached_tesla_state["charging_state"]
+            tesla_car_range = self._cached_tesla_state["range"]
+            tesla_car_est_range = self._cached_tesla_state["est_range"]
 
             # Poll Wall Connector data for actual power consumption and current
+            # This is FREE (local network call) and provides real-time charging data
             wall_connector_power = None
             wall_connector_amps = None
             if self.wall_connector_client:
@@ -451,6 +446,8 @@ class EcoliteManager:
                         if vehicle_current and grid_voltage:
                             wall_connector_power = (vehicle_current * grid_voltage) / 1000  # kW
                             wall_connector_amps = vehicle_current  # Store actual amps for display
+                            # Use Wall Connector power for Tesla charging display (FREE and real-time)
+                            tesla_car_charging_power = wall_connector_power
                         logger.debug(
                             f"Wall Connector: {vehicle_current}A @ {grid_voltage}V = {wall_connector_power}kW"
                         )
@@ -671,6 +668,41 @@ class EcoliteManager:
 
         except Exception as e:
             logger.error(f"Error in polling loop: {e}")
+
+    async def _sync_tesla_display_data(self) -> None:
+        """Sync Tesla display data every 10 minutes to reduce API calls.
+
+        This replaces the continuous Tesla API polling in the main loop.
+        Only syncs SOC, charging state, and range for display purposes.
+        """
+        import time
+
+        current_time = time.time()
+        time_since_last = current_time - self._cached_tesla_state["last_update"]
+
+        # Only sync if it's been more than 10 minutes or we have no data
+        if time_since_last < self._tesla_display_sync_interval and self._cached_tesla_state["soc"] is not None:
+            return
+
+        if not (self.tesla_client and self.tesla_client.is_enabled()):
+            return
+
+        try:
+            # Use get_vehicle_data (never wakes sleeping vehicles) only every 10 minutes
+            tesla_vehicle_data = await self.tesla_client.get_vehicle_data()
+            if tesla_vehicle_data and tesla_vehicle_data.timestamp:
+                self._cached_tesla_state.update({
+                    "soc": tesla_vehicle_data.battery_level,
+                    "charging_state": tesla_vehicle_data.charging_state,
+                    "range": tesla_vehicle_data.battery_range,
+                    "est_range": tesla_vehicle_data.est_battery_range,
+                    "last_update": current_time,
+                })
+                logger.debug(f"Tesla display data synced: SOC={tesla_vehicle_data.battery_level}%, State={tesla_vehicle_data.charging_state}")
+            else:
+                logger.debug("Tesla vehicle data unavailable for display sync")
+        except Exception as e:
+            logger.debug(f"Tesla display sync failed: {e}")
 
     def get_device_data(self, device_id: str) -> dict[str, Any] | None:
         """Get current data for a specific device."""

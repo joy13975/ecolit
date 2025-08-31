@@ -24,8 +24,8 @@ class TeslaChargingController:
 
         # Minimum intervals between commands (seconds)
         self.wake_interval = 30  # Don't wake more than once per 30s
-        self.charge_command_interval = 10  # Don't start/stop more than once per 10s
-        self.amps_command_interval = 30  # Don't change amps more than once per 30s
+        self.charge_command_interval = 300  # Don't start/stop more than once per 5 minutes (conservative)
+        self.amps_command_interval = 30  # Don't change amps more than once per 30s (keep responsive)
 
         # Tesla schedule cache - schedule data changes rarely
         self._schedule_cache = {}
@@ -36,6 +36,15 @@ class TeslaChargingController:
         self._vehicle_data_cache = None
         self._vehicle_data_cache_time = 0
         self._vehicle_data_cache_ttl = 30  # 30 seconds - only refresh when needed
+
+        # Local Tesla state tracking (synced every 10 minutes to reduce API calls)
+        self._local_tesla_state = {
+            "soc": None,
+            "charging_state": None,
+            "current_amps": None,
+            "last_sync": 0,
+        }
+        self._tesla_sync_interval = 600  # 10 minutes between Tesla API syncs
 
         logger.info("Tesla charging controller initialized")
 
@@ -101,7 +110,13 @@ class TeslaChargingController:
                     result["warnings"].extend(charge_result["warnings"])
 
                 # Set target amperage (only if different from current)
-                current_amps = getattr(vehicle_data, "charge_amps", None)
+                # Use local state for quick checks, fresh data for actual commands
+                if self._should_sync_tesla():
+                    # We just synced, use fresh data from vehicle_data
+                    current_amps = getattr(vehicle_data, "charge_amps", None)
+                else:
+                    # Use local state to avoid API call for "already at X" checks
+                    current_amps = self._get_local_current_amps()
 
                 # Compare with tolerance since current_amps may be float, target_amps is int
                 needs_change = True
@@ -115,6 +130,8 @@ class TeslaChargingController:
                     if amps_result["success"]:
                         result["actions_taken"].append(f"Set charging to {target_amps}A")
                         result["success"] = True
+                        # Update local state immediately after successful command
+                        self._local_tesla_state["current_amps"] = target_amps
                     else:
                         result["errors"].append(amps_result["error"])
                 else:
@@ -122,11 +139,21 @@ class TeslaChargingController:
                     result["actions_taken"].append(f"Already at {target_amps}A (no change needed)")
             else:
                 # Target amps is 0, we want to stop
-                if vehicle_data.charging_state in ["Charging", "Starting"]:
+                # Use local state for charging state to avoid unnecessary API calls
+                if self._should_sync_tesla():
+                    # We just synced, use fresh data from vehicle_data
+                    current_charging_state = vehicle_data.charging_state
+                else:
+                    # Use local state for charging state check
+                    current_charging_state = self._local_tesla_state.get("charging_state")
+
+                if current_charging_state in ["Charging", "Starting"]:
                     stop_result = await self._stop_charging()
                     if stop_result["success"]:
                         result["actions_taken"].append("Stopped charging")
                         result["success"] = True
+                        # Update local state immediately after successful stop command
+                        self._local_tesla_state["charging_state"] = "Stopped"
                     else:
                         result["errors"].append(stop_result["error"])
                 else:
@@ -140,7 +167,7 @@ class TeslaChargingController:
         return result
 
     async def _get_cached_vehicle_data(self, force_refresh: bool = False) -> tuple[Any, bool]:
-        """Get vehicle data with caching to minimize API calls.
+        """Get vehicle data with intelligent caching and 10-minute sync to minimize API calls.
 
         Args:
             force_refresh: Force a fresh API call even if cache is valid
@@ -150,18 +177,29 @@ class TeslaChargingController:
         """
         current_time = time.time()
 
-        # Use cache if valid and not forcing refresh
+        # Check if we need to sync with Tesla (every 10 minutes or if no local state)
+        should_sync = force_refresh or self._should_sync_tesla()
+
+        # Use cache if valid and not forcing refresh and don't need sync
         if (
-            not force_refresh
+            not should_sync
             and self._vehicle_data_cache is not None
             and (current_time - self._vehicle_data_cache_time) < self._vehicle_data_cache_ttl
         ):
             logger.debug("Using cached vehicle data to avoid API call")
             return self._vehicle_data_cache, False
 
-        # Need fresh data - make API call
-        logger.debug("Refreshing vehicle data from Tesla API")
-        vehicle_data, was_sleeping = await self.tesla_client.poll_vehicle_data_with_wake_option()
+        # Only make API call if we need to sync (every 10 minutes) or cache expired
+        if should_sync:
+            logger.debug("Syncing vehicle data from Tesla API (10-minute interval)")
+            vehicle_data, was_sleeping = await self.tesla_client.poll_vehicle_data_with_wake_option()
+
+            # Update local state with fresh data
+            await self._sync_local_tesla_state(vehicle_data)
+        else:
+            logger.debug("Using cached vehicle data within 10-minute window")
+            vehicle_data = self._vehicle_data_cache
+            was_sleeping = False
 
         # Cache the result
         self._vehicle_data_cache = vehicle_data
@@ -377,7 +415,10 @@ class TeslaChargingController:
 
         charging_states_that_need_start = ["Stopped", "Complete", "Disconnected"]
 
-        if vehicle_data.charging_state in charging_states_that_need_start:
+        # Use fresh data from vehicle_data since we should have just synced if needed
+        current_charging_state = vehicle_data.charging_state if vehicle_data else self._local_tesla_state.get("charging_state")
+
+        if current_charging_state in charging_states_that_need_start:
             current_time = time.time()
 
             if current_time - self.last_charge_command < self.charge_command_interval:
@@ -391,6 +432,8 @@ class TeslaChargingController:
                 success = await self.tesla_client.charge_start()
                 if success:
                     result["action_taken"] = "Started charging"
+                    # Update local state immediately after successful start command
+                    self._local_tesla_state["charging_state"] = "Charging"
                 else:
                     result["warnings"].append("Failed to start charging")
             except Exception as e:
@@ -443,3 +486,36 @@ class TeslaChargingController:
         import asyncio
 
         await asyncio.sleep(seconds)
+
+    def _should_sync_tesla(self) -> bool:
+        """Check if we should sync with Tesla API (every 10 minutes)."""
+        import time
+
+        current_time = time.time()
+        time_since_sync = current_time - self._local_tesla_state["last_sync"]
+
+        # Sync if it's been more than 10 minutes or we have no local state
+        return (time_since_sync >= self._tesla_sync_interval or
+                self._local_tesla_state["current_amps"] is None)
+
+    async def _sync_local_tesla_state(self, vehicle_data) -> None:
+        """Update local Tesla state to reduce API calls.
+
+        Args:
+            vehicle_data: Fresh Tesla vehicle data from API
+        """
+        import time
+
+        if vehicle_data:
+            self._local_tesla_state.update({
+                "soc": vehicle_data.battery_level,
+                "charging_state": vehicle_data.charging_state,
+                "current_amps": getattr(vehicle_data, "charge_amps", None),
+                "last_sync": time.time(),
+            })
+            logger.debug(f"Local Tesla state synced: SOC={vehicle_data.battery_level}%, "
+                        f"State={vehicle_data.charging_state}, Amps={self._local_tesla_state['current_amps']}")
+
+    def _get_local_current_amps(self) -> float | None:
+        """Get current amps from local state (avoiding API call)."""
+        return self._local_tesla_state.get("current_amps")
