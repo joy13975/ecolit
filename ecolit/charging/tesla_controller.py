@@ -187,25 +187,24 @@ class TeslaChargingController:
         should_sync = force_refresh or self._should_sync_tesla(battery_soc, solar_power, policy_name)
 
         # Use cache if valid and not forcing refresh and don't need sync
+        # BUT always sync if cache is None (no valid data)
         if (
             not should_sync
             and self._vehicle_data_cache is not None
+            and hasattr(self._vehicle_data_cache, 'charging_state')
+            and self._vehicle_data_cache.charging_state is not None
             and (current_time - self._vehicle_data_cache_time) < self._vehicle_data_cache_ttl
         ):
             logger.debug("Using cached vehicle data to avoid API call")
             return self._vehicle_data_cache, False
 
-        # Only make API call if we need to sync (every 10 minutes) or cache expired
-        if should_sync:
-            logger.debug("Syncing vehicle data from Tesla API (10-minute interval)")
-            vehicle_data, was_sleeping = await self.tesla_client.poll_vehicle_data_with_wake_option()
+        # Always make API call if we reach here (either should_sync or no valid cache)
+        logger.debug("Syncing vehicle data from Tesla API (wake if needed)")
+        vehicle_data, was_sleeping = await self.tesla_client.poll_vehicle_data_with_wake_option()
 
-            # Update local state with fresh data
+        # Update local state with fresh data
+        if vehicle_data and hasattr(vehicle_data, 'charging_state'):
             await self._sync_local_tesla_state(vehicle_data)
-        else:
-            logger.debug("Using cached vehicle data within 10-minute window")
-            vehicle_data = self._vehicle_data_cache
-            was_sleeping = False
 
         # Cache the result
         self._vehicle_data_cache = vehicle_data
@@ -274,6 +273,11 @@ class TeslaChargingController:
         result = {"can_charge": False, "errors": [], "warnings": []}
 
         try:
+            # Check if we have vehicle data
+            if not vehicle_data or not hasattr(vehicle_data, 'charging_state'):
+                result["errors"].append("🚗 Tesla vehicle data unavailable")
+                return result
+                
             # Check if charger is connected based on charging_state
             # "Disconnected" means no cable connected
             # "Stopped" means plugged in but not charging
@@ -286,7 +290,7 @@ class TeslaChargingController:
 
         except Exception as e:
             logger.error(f"Error validating basic charging conditions: {e}")
-            result["errors"].append(f"Basic validation error: {e}")
+            result["errors"].append("🚗 Tesla vehicle not responding")
 
         return result
 

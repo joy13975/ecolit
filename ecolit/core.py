@@ -92,6 +92,41 @@ class EcoliteManager:
             try:
                 await self.tesla_client.start()
                 logger.info("Tesla API client initialized")
+
+                # Sync EV controller with actual Tesla charging state on startup
+                if self.ev_controller.is_enabled() and self.tesla_controller:
+                    try:
+                        # Get initial Tesla state (wake car if needed for startup sync)
+                        vehicle_data, was_sleeping = await self.tesla_client.poll_vehicle_data_with_wake_option()
+                        if was_sleeping:
+                            logger.info("Woke up Tesla vehicle for initial state sync")
+                        if vehicle_data and vehicle_data.battery_level is not None and vehicle_data.charging_state is not None:
+                            # Extract charging state
+                            is_charging = vehicle_data.charging_state == "Charging"
+                            charging_amps = getattr(vehicle_data, "charge_amps", None) if is_charging else None
+
+                            # Sync EV controller with actual state
+                            self.ev_controller.sync_with_actual_state(charging_amps, is_charging)
+
+                            # Also sync Tesla controller's local state to avoid unnecessary API calls
+                            await self.tesla_controller._sync_local_tesla_state(vehicle_data)
+
+                            # Also update cached Tesla state for display
+                            import time
+                            self._cached_tesla_state.update({
+                                "soc": vehicle_data.battery_level,
+                                "charging_state": vehicle_data.charging_state,
+                                "range": vehicle_data.battery_range,
+                                "est_range": vehicle_data.est_battery_range,
+                                "last_update": time.time(),
+                            })
+                            logger.info(f"Initial Tesla sync: SOC={vehicle_data.battery_level}%, State={vehicle_data.charging_state}")
+                        else:
+                            # Car is sleeping or data unavailable - sync EV controller to 0A state
+                            self.ev_controller.sync_with_actual_state(None, False)
+                            logger.info("Tesla vehicle data unavailable on startup (likely sleeping)")
+                    except Exception as e:
+                        logger.warning(f"Could not sync initial Tesla state: {e}")
             except Exception as e:
                 logger.error(f"Failed to initialize Tesla API client: {e}")
                 logger.warning("Tesla data will not be available")

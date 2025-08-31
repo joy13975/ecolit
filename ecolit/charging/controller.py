@@ -33,9 +33,9 @@ class EVChargingController:
         self.max_amps = self.config.get("max_amps", 20)
         self.min_amps = 6  # Tesla minimum charging amps
 
-        # State tracking - start at minimum amps, not 0
-        self.current_amps = self.min_amps  # Start at minimum viable charging level
-        self.target_amps = self.min_amps
+        # State tracking - start at 0 (unknown), will sync with actual state on startup
+        self.current_amps = 0  # Will be synced with actual Tesla state
+        self.target_amps = 0  # Will be calculated based on actual state
         self.last_adjustment_time = 0.0
         self.last_measurement_time = 0.0
 
@@ -50,6 +50,29 @@ class EVChargingController:
     def get_current_policy(self) -> str:
         """Get current policy name."""
         return self.policy.get_name() if self.enabled else "DISABLED"
+
+    def sync_with_actual_state(self, charging_amps: int | None, is_charging: bool) -> None:
+        """Sync controller state with actual Tesla charging state on startup.
+
+        Args:
+            charging_amps: Current charging amperage from Tesla (None if unknown)
+            is_charging: Whether Tesla is currently charging
+        """
+        if not self.enabled:
+            return
+
+        # Set current amps based on actual state
+        if is_charging and charging_amps is not None:
+            # Car is charging at specific amperage
+            self.current_amps = max(self.min_amps, min(charging_amps, self.max_amps))
+            logger.info(f"Synced EV controller with actual charging state: {self.current_amps}A")
+        else:
+            # Car is not charging
+            self.current_amps = 0
+            logger.info("Synced EV controller with actual state: Not charging (0A)")
+
+        # Set target to match current initially (no change on startup)
+        self.target_amps = self.current_amps
 
     def should_measure(self) -> bool:
         """Check if it's time to take new measurements."""

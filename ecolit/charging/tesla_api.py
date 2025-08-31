@@ -182,28 +182,7 @@ class TeslaAPIClient:
                             f"Failed to get access token: {response.status} - {error_text}"
                         )
 
-                        # Check if this is a complete token expiration requiring new OAuth
-                        if "login_required" in error_text:
-                            logger.warning(
-                                "🔑 Tesla refresh token completely expired - starting OAuth flow..."
-                            )
-
-                            # Automatically invoke the mint process
-                            if await self._mint_new_tokens():
-                                logger.info(
-                                    "✅ New Tesla tokens obtained - retrying authentication"
-                                )
-                                # Reload config with new tokens
-                                await self._reload_config()
-                                self._refresh_attempted = False  # Reset flag for new tokens
-                                return await self._get_access_token()
-                            else:
-                                logger.error(
-                                    "❌ Failed to obtain new Tesla tokens - Tesla data will be unavailable"
-                                )
-                                raise RuntimeError(f"Token mint failed: {response.status}")
-
-                        # Only attempt refresh once for other 401 errors
+                        # Only attempt refresh once for all 401 errors (including login_required)
                         if not self._refresh_attempted:
                             logger.info(
                                 "🔄 Tesla access token expired - attempting automatic refresh..."
@@ -219,10 +198,20 @@ class TeslaAPIClient:
                                 await self._reload_config()
                                 return await self._get_access_token()
                             else:
-                                logger.error(
-                                    "❌ Automatic token refresh failed - Tesla data will be unavailable"
-                                )
-                                raise RuntimeError(f"Token refresh failed: {response.status}")
+                                # Refresh failed, try OAuth as last resort (only if login_required)
+                                if "login_required" in error_text:
+                                    logger.warning("🔑 Tesla refresh token expired - starting OAuth flow...")
+                                    if await self._mint_new_tokens():
+                                        logger.info("✅ New Tesla tokens obtained - retrying authentication")
+                                        await self._reload_config()
+                                        self._refresh_attempted = False  # Reset flag for new tokens
+                                        return await self._get_access_token()
+                                    else:
+                                        logger.error("❌ Failed to obtain new Tesla tokens")
+                                        raise RuntimeError(f"Token mint failed: {response.status}")
+                                else:
+                                    logger.error("❌ Automatic token refresh failed")
+                                    raise RuntimeError(f"Token refresh failed: {response.status}")
                         else:
                             logger.error(
                                 "❌ Token refresh already attempted - Tesla data will be unavailable"
@@ -279,8 +268,8 @@ class TeslaAPIClient:
         try:
             from ecolit.tesla.mint import mint_tesla_tokens
 
-            # Run the existing mint process directly
-            success = await mint_tesla_tokens()
+            # Run the existing mint process directly (non-verbose during auto-refresh)
+            success = await mint_tesla_tokens(verbose=False)
 
             if success:
                 # Reload config after successful minting

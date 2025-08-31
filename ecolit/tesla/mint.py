@@ -34,13 +34,10 @@ class OAuthCallbackHandler(http.server.SimpleHTTPRequestHandler):
 
         if "code" in query_params:
             self.server.auth_code = query_params["code"][0]
-            print(f"\n✅ Authorization code received: {self.server.auth_code[:20]}...")
+            # Suppress verbose output during automatic refresh
         elif "error" in query_params:
             self.server.auth_error = query_params["error"][0]
-            error_desc = query_params.get("error_description", [""])[0]
-            print(f"\n❌ OAuth error: {self.server.auth_error}")
-            if error_desc:
-                print(f"Description: {error_desc}")
+            # Suppress verbose output during automatic refresh
 
         # Send success response
         self.send_response(200)
@@ -61,7 +58,7 @@ class OAuthCallbackHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-async def register_partner_account(tesla_config, access_token):
+async def register_partner_account(tesla_config, access_token, verbose: bool = True):
     """Register partner account with Tesla Fleet API."""
     client_id = tesla_config.get("client_id")
     client_secret = tesla_config.get("client_secret")
@@ -71,12 +68,14 @@ async def register_partner_account(tesla_config, access_token):
     partner_domain = tesla_config.get("partner_domain")
 
     if not partner_domain:
-        print("❌ No partner_domain configured in tesla config")
-        print("💡 Add 'partner_domain: your-domain.com' to tesla config")
-        return False
+        if verbose:
+            print("ℹ️  No partner_domain configured - skipping Fleet API registration")
+            print("💡 Add 'partner_domain: your-domain.com' to tesla config for Fleet API")
+        return False  # Skip registration but don't treat as error
 
-    print("\n" + "=" * 50)
-    print("🔐 Getting partner token for Fleet API registration...")
+    if verbose:
+        print("\n" + "=" * 50)
+        print("🔐 Getting partner token for Fleet API registration...")
 
     # Get Fleet API endpoints from config
     fleet_endpoints = tesla_config.get(
@@ -173,7 +172,7 @@ async def register_partner_account(tesla_config, access_token):
             return False
 
 
-async def mint_tesla_tokens():
+async def mint_tesla_tokens(verbose: bool = True):
     """Complete Tesla setup: OAuth flow + partner registration."""
     config_path = Path.cwd() / "config.yaml"
 
@@ -188,8 +187,9 @@ async def mint_tesla_tokens():
     tesla_config = config.get("tesla", {})
 
     if not tesla_config.get("enabled", False):
-        print("❌ Tesla API is disabled in config.yaml")
-        print("💡 Set tesla.enabled: true to enable Tesla API")
+        if verbose:
+            print("❌ Tesla API is disabled in config.yaml")
+            print("💡 Set tesla.enabled: true to enable Tesla API")
         return False
 
     client_id = tesla_config.get("client_id")
@@ -220,12 +220,14 @@ async def mint_tesla_tokens():
     ]
     scope_string = " ".join(scopes)
 
-    print("🚀 Starting Tesla complete setup (OAuth + Fleet API registration)...")
-    print("📋 Scopes requested:", ", ".join(scopes))
+    if verbose:
+        print("🚀 Starting Tesla complete setup (OAuth + Fleet API registration)...")
+        print("📋 Scopes requested:", ", ".join(scopes))
 
     # Step 1: Kill any existing process on port 8750
     PORT = 8750
-    print(f"🔧 Checking if port {PORT} is in use...")
+    if verbose:
+        print(f"🔧 Checking if port {PORT} is in use...")
 
     # Kill any process using the port (using same approach as main app)
     try:
@@ -236,13 +238,15 @@ async def mint_tesla_tokens():
             text=True,
         )
         if result.returncode == 0:
-            print(f"✅ Cleared port {PORT}")
+            if verbose:
+                print(f"✅ Cleared port {PORT}")
             # Give processes time to release the port
             await asyncio.sleep(1)
     except Exception:
         pass  # Port might not be in use, which is fine
 
-    print(f"🌐 Starting callback server on http://localhost:{PORT}/callback")
+    if verbose:
+        print(f"🌐 Starting callback server on http://localhost:{PORT}/callback")
 
     try:
         with socketserver.TCPServer(("127.0.0.1", PORT), OAuthCallbackHandler) as httpd:
@@ -263,15 +267,18 @@ async def mint_tesla_tokens():
                 f"&prompt_missing_scopes=true"  # this allows scope selection
             )
 
-            print("\n🔐 Opening Tesla OAuth authorization in browser...")
-            print(f"If browser doesn't open, visit: {auth_url}")
+            if verbose:
+                print("\n🔐 Opening Tesla OAuth authorization in browser...")
+                print(f"If browser doesn't open, visit: {auth_url}")
 
             try:
                 webbrowser.open(auth_url)
             except Exception as e:
-                print(f"⚠️  Couldn't open browser automatically: {e}")
+                if verbose:
+                    print(f"⚠️  Couldn't open browser automatically: {e}")
 
-            print("\n⏳ Waiting for authorization... (complete login in browser)")
+            if verbose:
+                print("\n⏳ Waiting for authorization... (complete login in browser)")
 
             # Wait for callback (with timeout)
             timeout = 300  # 5 minutes
@@ -302,7 +309,8 @@ async def mint_tesla_tokens():
         return False
 
     # Step 3: Exchange authorization code for tokens
-    print("\n🔄 Exchanging authorization code for tokens...")
+    if verbose:
+        print("\n🔄 Exchanging authorization code for tokens...")
 
     token_data = {
         "grant_type": "authorization_code",
@@ -329,10 +337,11 @@ async def mint_tesla_tokens():
                         print("❌ Invalid token response - missing tokens")
                         return False
 
-                    print("✅ Tokens received successfully!")
-                    print(f"   Access token: {access_token[:20]}...")
-                    print(f"   Refresh token: {refresh_token[:20]}...")
-                    print(f"   Expires in: {expires_in} seconds")
+                    if verbose:
+                        print("✅ Tokens received successfully!")
+                        print(f"   Access token: {access_token[:20]}...")
+                        print(f"   Refresh token: {refresh_token[:20]}...")
+                        print(f"   Expires in: {expires_in} seconds")
 
                 else:
                     error_text = await response.text()
@@ -345,7 +354,8 @@ async def mint_tesla_tokens():
             return False
 
     # Step 4: Update config with tokens
-    print("\n💾 Updating config.yaml with new tokens...")
+    if verbose:
+        print("\n💾 Updating config.yaml with new tokens...")
 
     tesla_config["refresh_token"] = refresh_token
     tesla_config["access_token"] = access_token
@@ -355,25 +365,35 @@ async def mint_tesla_tokens():
     try:
         with open(config_path, "w") as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-        print("✅ Config updated with user tokens!")
+        if verbose:
+            print("✅ Config updated with user tokens!")
     except Exception as e:
         print(f"❌ Failed to update config: {e}")
         return False
 
-    # Step 5: Register with Fleet API
-    registration_success = await register_partner_account(tesla_config, access_token)
+    # Step 5: Register with Fleet API (optional)
+    partner_domain = tesla_config.get("partner_domain")
 
-    if registration_success:
-        print("\n🎉 Tesla complete setup successful!")
-        print("✅ User tokens obtained and saved")
-        print("✅ Partner account registered with Fleet API")
-        print("\n💡 Use 'make tesla-refresh' for ongoing token refresh")
-        return True
+    if partner_domain:
+        registration_success = await register_partner_account(tesla_config, access_token, verbose)
+        if registration_success:
+            if verbose:
+                print("\n🎉 Tesla complete setup successful!")
+                print("✅ User tokens obtained and saved")
+                print("✅ Partner account registered with Fleet API")
+        else:
+            if verbose:
+                print("\n⚠️  Tesla OAuth successful but Fleet API registration failed")
+                print("✅ User tokens obtained and saved")
+                print("❌ Partner registration failed - run 'make tesla-refresh' to retry")
     else:
-        print("\n⚠️  Tesla OAuth successful but Fleet API registration failed")
-        print("✅ User tokens obtained and saved")
-        print("❌ Partner registration failed - run 'make tesla-refresh' to retry")
-        return True  # Still consider partial success
+        # No partner domain configured - skip registration silently
+        if verbose:
+            print("\n✅ Tesla OAuth successful!")
+            print("✅ User tokens obtained and saved")
+            print("ℹ️  Fleet API registration skipped (no partner_domain configured)")
+
+    return True  # Success regardless of registration
 
 
 if __name__ == "__main__":
