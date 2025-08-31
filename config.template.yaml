@@ -42,7 +42,13 @@ devices:
 
 # Application Settings
 app:
-  polling_interval: 10  # Seconds between device polls
+  polling_interval: 10  # DEPRECATED - use polling.home_interval instead
+  
+# Polling Configuration - Separate frequencies for different data sources
+polling:
+  home_interval: 10     # Home devices (solar/battery) polling interval in seconds - HEMS is free so can be faster
+  tesla_retry_interval: 10  # Minutes between Tesla availability checks during solar surplus
+  surplus_threshold: 1000   # Minimum watts to consider as solar surplus
   
 # EV Charging Control
 ev_charging:

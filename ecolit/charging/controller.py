@@ -61,15 +61,15 @@ class EVChargingController:
         if not self.enabled:
             return
 
-        # Set current amps based on actual state
+        # Set current amps based on provided state
         if is_charging and charging_amps is not None:
             # Car is charging at specific amperage
             self.current_amps = max(self.min_amps, min(charging_amps, self.max_amps))
-            logger.info(f"Synced EV controller with actual charging state: {self.current_amps}A")
+            logger.info(f"EV controller initialized from actual Tesla state: {self.current_amps}A")
         else:
-            # Car is not charging
+            # Car is not charging or state unknown - initialize to safe default
             self.current_amps = 0
-            logger.info("Synced EV controller with actual state: Not charging (0A)")
+            logger.info("EV controller initialized to safe default: Not charging (0A)")
 
         # Set target to match current initially (no change on startup)
         self.target_amps = self.current_amps

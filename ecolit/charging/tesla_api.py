@@ -367,31 +367,6 @@ class TeslaAPIClient:
             logger.error(f"Failed to get Tesla vehicle data: {e}")
             return TeslaVehicleData()
 
-    async def get_charging_schedule(self) -> dict[str, Any]:
-        """Get current vehicle charging schedule configuration."""
-        if not self.enabled or not self.api:
-            return {}
-
-        try:
-            # Get vehicle data with charge schedule endpoints
-            vehicle_api = self.api.vehicles.specific(self.vehicle_id)
-            vehicle_data = await vehicle_api.vehicle_data(endpoints=["charge_schedule_data"])
-
-            if not vehicle_data or vehicle_data.get("response") is None:
-                return {}
-
-            response = vehicle_data["response"]
-            charge_schedule = response.get("charge_schedule_data", {})
-
-            logger.debug(f"Tesla charging schedule: {charge_schedule}")
-            return charge_schedule
-
-        except VehicleOffline:
-            logger.debug("Vehicle is offline/sleeping - cannot get charging schedule")
-            return {"status": "vehicle_sleeping"}
-        except Exception as e:
-            logger.error(f"Failed to get Tesla charging schedule: {e}")
-            return {}
 
     async def get_charging_config(self) -> dict[str, Any]:
         """Get current vehicle charging configuration including amp settings."""

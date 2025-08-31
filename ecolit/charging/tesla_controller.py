@@ -1,4 +1,4 @@
-"""Tesla charging controller with intelligent wake-up and schedule management."""
+"""Tesla charging controller with intelligent wake-up and solar-surplus-based charging."""
 
 import logging
 import time
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class TeslaChargingController:
-    """Intelligent Tesla charging controller with schedule validation and wake-up."""
+    """Intelligent Tesla charging controller with solar surplus detection and wake-up."""
 
     def __init__(self, tesla_client: TeslaAPIClient, config: dict[str, Any]):
         """Initialize Tesla charging controller."""
@@ -27,10 +27,8 @@ class TeslaChargingController:
         self.charge_command_interval = 300  # Don't start/stop more than once per 5 minutes (conservative)
         self.amps_command_interval = 30  # Don't change amps more than once per 30s (keep responsive)
 
-        # Tesla schedule cache - schedule data changes rarely
-        self._schedule_cache = {}
-        self._schedule_cache_time = 0
-        self._schedule_cache_ttl = 900  # 15 minutes (was 5 minutes)
+        # Success flag for current solar surplus event
+        self._current_surplus_charging_started = False
 
         # Vehicle data cache to minimize API calls
         self._vehicle_data_cache = None
@@ -48,18 +46,8 @@ class TeslaChargingController:
 
         logger.info("Tesla charging controller initialized")
 
-    async def execute_charging_control(self, target_amps: int, battery_soc: float = None, solar_power: float = None, policy_name: str = None) -> dict[str, Any]:
-        """Execute charging control with intelligent wake-up and validation.
-
-        Args:
-            target_amps: Target charging amperage (0 to stop)
-            battery_soc: Home battery SOC percentage
-            solar_power: Solar power generation in watts
-            policy_name: EV charging policy name
-
-        Returns:
-            Dict with status information and any error messages
-        """
+    async def execute_charging_control_with_wake(self, target_amps: int, battery_soc: float = None, solar_power: float = None, policy_name: str = None) -> dict[str, Any]:
+        """Execute charging control WITH wake-up option for starting charging."""
         if not self.tesla_client.is_enabled():
             return {"success": False, "error": "Tesla API client not enabled"}
 
@@ -72,23 +60,24 @@ class TeslaChargingController:
         }
 
         try:
-            # Step 1: Get vehicle data with caching to minimize API calls
-            vehicle_data, was_sleeping = await self._get_cached_vehicle_data(battery_soc=battery_soc, solar_power=solar_power, policy_name=policy_name)
+            # For starting charging, try to get data and wake if needed
+            if target_amps > 0:
+                logger.debug("Attempting to start charging - will wake vehicle if needed")
+                vehicle_data, was_sleeping = await self.tesla_client.poll_vehicle_data_with_wake_option()
 
-            if was_sleeping:
-                wake_result = await self._handle_wake_up()
-                if not wake_result["success"]:
-                    result["errors"].append(wake_result["error"])
-                    return result
-                result["actions_taken"].append("Vehicle woken up")
+                if was_sleeping:
+                    result["actions_taken"].append("Vehicle woken up")
+                    # Wait a moment for vehicle to fully wake
+                    await self._sleep(3)
+                    # Get fresh data after wake-up
+                    vehicle_data, _ = await self.tesla_client.poll_vehicle_data_with_wake_option()
+            else:
+                # For stopping, don't wake - just use cached data
+                logger.debug("Stopping charging - no wake needed")
+                vehicle_data = await self.tesla_client.get_vehicle_data()
+                was_sleeping = False
 
-                # Wait a moment for vehicle to fully wake
-                await self._sleep(3)
-
-                # Get fresh data after wake-up (force refresh)
-                vehicle_data, _ = await self._get_cached_vehicle_data(force_refresh=True, battery_soc=battery_soc, solar_power=solar_power, policy_name=policy_name)
-
-            # Step 2: Basic connection validation (always required)
+            # Basic connection validation (always required)
             basic_validation = await self._validate_basic_charging_conditions(vehicle_data)
             if not basic_validation["can_charge"]:
                 result["errors"].extend(basic_validation["errors"])
@@ -96,59 +85,57 @@ class TeslaChargingController:
                     result["warnings"].extend(basic_validation["warnings"])
                 return result
 
-            # Step 3: Handle charging state
-            if target_amps > 0:
-                # Only validate schedule when trying to start/increase charging
-                schedule_validation = await self._validate_schedule_conditions(vehicle_data)
-                if not schedule_validation["can_charge"]:
-                    result["errors"].extend(schedule_validation["errors"])
-                    if schedule_validation["warnings"]:
-                        result["warnings"].extend(schedule_validation["warnings"])
-                    return result
-                # We want to charge
-                charge_result = await self._ensure_charging_started(vehicle_data)
-                if charge_result["action_taken"]:
-                    result["actions_taken"].append(charge_result["action_taken"])
-                if charge_result["warnings"]:
-                    result["warnings"].extend(charge_result["warnings"])
+            # Handle charging start
+            charge_result = await self._ensure_charging_started(vehicle_data)
+            if charge_result["action_taken"]:
+                result["actions_taken"].append(charge_result["action_taken"])
+            if charge_result["warnings"]:
+                result["warnings"].extend(charge_result["warnings"])
 
-                # Set target amperage (only if different from current)
-                # Use local state for quick checks, fresh data for actual commands
-                if self._should_sync_tesla(battery_soc, solar_power, policy_name):
-                    # We just synced, use fresh data from vehicle_data
-                    current_amps = getattr(vehicle_data, "charge_amps", None)
-                else:
-                    # Use local state to avoid API call for "already at X" checks
-                    current_amps = self._get_local_current_amps()
+            # Set target amperage
+            current_amps = getattr(vehicle_data, "charge_amps", None)
+            needs_change = True
+            if current_amps is not None:
+                amps_diff = abs(current_amps - target_amps)
+                needs_change = amps_diff > 0.5
 
-                # Compare with tolerance since current_amps may be float, target_amps is int
-                needs_change = True
-                if current_amps is not None:
-                    # Allow 0.5A tolerance (Tesla reports actual measured amps, not requested)
-                    amps_diff = abs(current_amps - target_amps)
-                    needs_change = amps_diff > 0.5
-
-                if needs_change:
-                    amps_result = await self._set_charging_amps(target_amps)
-                    if amps_result["success"]:
-                        result["actions_taken"].append(f"Set charging to {target_amps}A")
-                        result["success"] = True
-                        # Update local state immediately after successful command
-                        self._local_tesla_state["current_amps"] = target_amps
-                    else:
-                        result["errors"].append(amps_result["error"])
-                else:
+            if needs_change:
+                amps_result = await self._set_charging_amps(target_amps)
+                if amps_result["success"]:
+                    result["actions_taken"].append(f"Set charging to {target_amps}A")
                     result["success"] = True
-                    result["actions_taken"].append(f"Already at {target_amps}A (no change needed)")
-            else:
-                # Target amps is 0, we want to stop
-                # Use local state for charging state to avoid unnecessary API calls
-                if self._should_sync_tesla(battery_soc, solar_power, policy_name):
-                    # We just synced, use fresh data from vehicle_data
-                    current_charging_state = vehicle_data.charging_state
+                    self._local_tesla_state["current_amps"] = target_amps
                 else:
-                    # Use local state for charging state check
-                    current_charging_state = self._local_tesla_state.get("charging_state")
+                    result["errors"].append(amps_result["error"])
+            else:
+                result["success"] = True
+                result["actions_taken"].append(f"Already at {target_amps}A (no change needed)")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in Tesla charging control with wake: {e}")
+            result["errors"].append(f"Unexpected error: {e}")
+            return result
+
+    async def execute_charging_control(self, target_amps: int, battery_soc: float = None, solar_power: float = None, policy_name: str = None) -> dict[str, Any]:
+        """Execute charging control WITHOUT wake-up (for stopping charging)."""
+        if not self.tesla_client.is_enabled():
+            return {"success": False, "error": "Tesla API client not enabled"}
+
+        result = {
+            "success": False,
+            "target_amps": target_amps,
+            "actions_taken": [],
+            "warnings": [],
+            "errors": [],
+        }
+
+        try:
+            # For stopping charging, use local state or non-wake data only
+            if target_amps == 0:
+                # Use local state for charging state check to avoid wake-up
+                current_charging_state = self._local_tesla_state.get("charging_state")
 
                 if current_charging_state in ["Charging", "Starting"]:
                     stop_result = await self._stop_charging()
@@ -162,6 +149,8 @@ class TeslaChargingController:
                 else:
                     result["success"] = True
                     result["actions_taken"].append("Already not charging")
+            else:
+                result["errors"].append("Use execute_charging_control_with_wake for starting charging")
 
         except Exception as e:
             logger.error(f"Error in Tesla charging control: {e}")
@@ -199,8 +188,15 @@ class TeslaChargingController:
             return self._vehicle_data_cache, False
 
         # Always make API call if we reach here (either should_sync or no valid cache)
-        logger.debug("Syncing vehicle data from Tesla API (wake if needed)")
-        vehicle_data, was_sleeping = await self.tesla_client.poll_vehicle_data_with_wake_option()
+        # Use non-wake method - only check if already awake
+        logger.debug("Syncing vehicle data from Tesla API (no wake-up)")
+        try:
+            vehicle_data = await self.tesla_client.get_vehicle_data()
+            was_sleeping = False
+        except Exception as e:
+            logger.debug(f"Tesla not accessible (likely sleeping): {e}")
+            vehicle_data = None
+            was_sleeping = True
 
         # Update local state with fresh data
         if vehicle_data and hasattr(vehicle_data, 'charging_state'):
@@ -240,21 +236,13 @@ class TeslaChargingController:
                 "The vehicle reports 'Disconnected' state. If the cable is actually connected, "
                 "try waking the vehicle in the Tesla app or wait a moment for the connection to be detected."
             ),
-            "🕒 Outside Tesla charging schedule": (
-                "The vehicle's scheduled charging window is not currently active. "
-                "Check your Tesla app's charging schedule settings or charge immediately if needed."
-            ),
-            "🏠 Wall Connector schedule restriction": (
-                "The Wall Connector has schedule restrictions that prevent charging at this time. "
-                "Check your Wall Connector's schedule settings in the Tesla app."
-            ),
             "Wake-up command failed": (
                 "Unable to wake up the Tesla vehicle. This might be due to poor cellular connectivity "
                 "or the vehicle being in deep sleep mode. Try again in a few minutes."
             ),
             "Failed to start charging": (
                 "Unable to start charging. Common causes include: charge limit reached, "
-                "charging schedule restrictions, or vehicle in a state that prevents charging."
+                "charger not connected, or vehicle in a state that prevents charging."
             ),
             "Failed to set charging amps": (
                 "Unable to adjust charging amperage. This could be due to vehicle state, "
@@ -277,7 +265,7 @@ class TeslaChargingController:
             if not vehicle_data or not hasattr(vehicle_data, 'charging_state'):
                 result["errors"].append("🚗 Tesla vehicle data unavailable")
                 return result
-                
+
             # Check if charger is connected based on charging_state
             # "Disconnected" means no cable connected
             # "Stopped" means plugged in but not charging
@@ -294,130 +282,19 @@ class TeslaChargingController:
 
         return result
 
-    async def _validate_schedule_conditions(self, vehicle_data) -> dict[str, Any]:
-        """Validate schedule conditions - only for starting/increasing charging."""
-        result = {"can_charge": False, "errors": [], "warnings": []}
+    def reset_surplus_event(self):
+        """Reset the success flag when solar surplus disappears."""
+        self._current_surplus_charging_started = False
+        logger.debug("Reset surplus event - ready for next solar surplus")
 
-        try:
-            # Get Tesla charging schedule
-            schedule_data = await self._get_cached_schedule()
-            schedule_result = self._check_tesla_schedule(schedule_data)
+    def has_started_charging_this_surplus(self) -> bool:
+        """Check if we've successfully started charging during current surplus event."""
+        return self._current_surplus_charging_started
 
-            if not schedule_result["in_schedule"]:
-                result["errors"].append(
-                    f"🕒 Outside Tesla charging schedule: {schedule_result['reason']}"
-                )
-                return result
-
-            # Check wall connector schedule
-            wall_connector_result = await self._check_wall_connector_schedule()
-            if not wall_connector_result["allowed"]:
-                result["errors"].append(
-                    f"🏠 Wall Connector schedule restriction: {wall_connector_result['reason']}"
-                )
-                return result
-
-            result["can_charge"] = True
-
-        except Exception as e:
-            logger.error(f"Error validating schedule conditions: {e}")
-            result["errors"].append(f"Schedule validation error: {e}")
-
-        return result
-
-    async def _get_cached_schedule(self) -> dict[str, Any]:
-        """Get Tesla charging schedule with caching."""
-        current_time = time.time()
-
-        if (current_time - self._schedule_cache_time) < self._schedule_cache_ttl:
-            return self._schedule_cache
-
-        try:
-            schedule_data = await self.tesla_client.get_charging_schedule()
-            self._schedule_cache = schedule_data
-            self._schedule_cache_time = current_time
-            return schedule_data
-        except Exception as e:
-            logger.warning(f"Failed to get charging schedule: {e}")
-            return {}
-
-    def _check_tesla_schedule(self, schedule_data: dict[str, Any]) -> dict[str, Any]:
-        """Check if current time is within Tesla charging schedule."""
-        result = {"in_schedule": True, "reason": "No schedule restrictions"}
-
-        if not schedule_data:
-            return result
-
-        # Handle sleeping vehicle
-        if schedule_data.get("status") == "vehicle_sleeping":
-            result["reason"] = "Schedule check requires awake vehicle"
-            return result
-
-        # Check for active schedules
-        schedules = schedule_data.get("charge_schedules", [])
-        active_schedules = [s for s in schedules if s.get("enabled", False)]
-
-        if not active_schedules:
-            # No schedules configured, charging is always allowed
-            return result
-
-        # Get current time info
-        import datetime
-
-        now = datetime.datetime.now()
-        current_weekday = now.weekday()  # Monday=0, Sunday=6
-        current_minutes = now.hour * 60 + now.minute
-
-        # Check if current time matches any active schedule
-        for schedule in active_schedules:
-            # Check days of week (Tesla uses different encoding: Sunday=0, Monday=1, etc.)
-            days_of_week = schedule.get("days_of_week", 0)
-
-            # Convert Python weekday to Tesla weekday
-            tesla_weekday = (current_weekday + 1) % 7  # Convert Mon=0 to Sun=0, Mon=1, etc.
-
-            # Check if today is enabled in this schedule
-            if not (days_of_week & (1 << tesla_weekday)):
-                continue
-
-            # Check time window
-            start_time = schedule.get("start_time", 0)  # Minutes since midnight
-            end_time = schedule.get("end_time", 0)  # Minutes since midnight
-
-            # Handle schedules that cross midnight
-            if start_time <= end_time:
-                # Normal case: start_time < end_time (e.g., 9:00-17:00)
-                if start_time <= current_minutes <= end_time:
-                    result["reason"] = (
-                        f"Within schedule: {start_time // 60:02d}:{start_time % 60:02d}-{end_time // 60:02d}:{end_time % 60:02d}"
-                    )
-                    return result
-            else:
-                # Crosses midnight: start_time > end_time (e.g., 23:00-06:00)
-                if current_minutes >= start_time or current_minutes <= end_time:
-                    result["reason"] = (
-                        f"Within overnight schedule: {start_time // 60:02d}:{start_time % 60:02d}-{end_time // 60:02d}:{end_time % 60:02d}"
-                    )
-                    return result
-
-        # If we get here, current time is not within any active schedule
-        result["in_schedule"] = False
-        result["reason"] = f"Outside all {len(active_schedules)} configured schedule(s)"
-
-        return result
-
-    async def _check_wall_connector_schedule(self) -> dict[str, Any]:
-        """Check if wall connector allows charging based on its schedule."""
-        result = {"allowed": True, "reason": "No wall connector schedule restrictions"}
-
-        # For now, we'll assume wall connector allows charging unless we have specific data
-        # In the future, this could check wall connector specific schedules
-        # or integration with home energy management schedules
-
-        # Basic implementation: Check if wall connector is available
-        # This is a placeholder for more sophisticated schedule checking
-
-        return result
+    def mark_surplus_charging_started(self):
+        """Mark that we've successfully started charging during current surplus event."""
+        self._current_surplus_charging_started = True
+        logger.debug("Marked surplus charging as started")
 
     async def _ensure_charging_started(self, vehicle_data) -> dict[str, Any]:
         """Ensure charging is started if not already charging."""
@@ -444,6 +321,8 @@ class TeslaChargingController:
                     result["action_taken"] = "Started charging"
                     # Update local state immediately after successful start command
                     self._local_tesla_state["charging_state"] = "Charging"
+                    # Mark that we've successfully started charging during this surplus event
+                    self.mark_surplus_charging_started()
                 else:
                     result["warnings"].append("Failed to start charging")
             except Exception as e:
