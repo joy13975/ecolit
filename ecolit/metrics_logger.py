@@ -41,24 +41,24 @@ class MetricsLogger:
         # Define CSV headers for EV charging metrics
         self.csv_headers = [
             "timestamp",
-            "battery_soc_percent",
-            "battery_soc_realtime_percent",
-            "battery_soc_confidence",
-            "battery_soc_source",
-            "battery_charging_rate_pct_per_hour",
-            "battery_power_w",
+            "home_batt_soc_percent",
+            "home_batt_soc_realtime_percent",
+            "home_batt_soc_confidence",
+            "home_batt_soc_source",
+            "home_batt_charging_rate_pct_per_hour",
+            "home_batt_power_w",
             "grid_power_flow_w",
             "solar_power_w",
             "ev_charging_amps",
             "ev_policy",
-            "tesla_car_soc",
-            "tesla_car_charging_power",
-            "tesla_car_charging_state",
-            "tesla_car_range_km",
-            "tesla_car_est_range_km",
-            "wall_connector_power",
-            "wall_connector_amps",
-            "house_load_estimate",
+            "ev_soc_percent",
+            "ev_charging_power_w",
+            "ev_charging_state",
+            "ev_range_km",
+            "ev_est_range_km",
+            "ev_wc_power_w",
+            "ev_wc_amps",
+            "house_load_estimate_w",
             "house_load_confidence",
             "notes",
         ]
@@ -78,53 +78,58 @@ class MetricsLogger:
 
     def log_metrics(
         self,
-        battery_soc: float | None = None,
-        battery_soc_realtime: float | None = None,
-        battery_soc_confidence: float | None = None,
-        battery_soc_source: str | None = None,
-        battery_charging_rate_pct_per_hour: float | None = None,
-        battery_power: float | None = None,
+        home_batt_soc: float | None = None,
+        home_batt_soc_realtime: float | None = None,
+        home_batt_soc_confidence: float | None = None,
+        home_batt_soc_source: str | None = None,
+        home_batt_charging_rate_pct_per_hour: float | None = None,
+        home_batt_power: float | None = None,
         grid_power_flow: float | None = None,
         solar_power: float | None = None,
         ev_charging_amps: float = 0,
         ev_policy: str = "unknown",
-        tesla_car_soc: float | None = None,
-        tesla_car_charging_power: float | None = None,
-        tesla_car_charging_state: str | None = None,
-        tesla_car_range_km: float | None = None,
-        tesla_car_est_range_km: float | None = None,
-        wall_connector_power: float | None = None,
-        wall_connector_amps: float | None = None,
+        ev_soc: float | None = None,
+        ev_charging_power: float | None = None,
+        ev_charging_state: str | None = None,
+        ev_range_km: float | None = None,
+        ev_est_range_km: float | None = None,
+        ev_wc_power: float | None = None,
+        ev_wc_amps: float | None = None,
         house_load_estimate: float | None = None,
         house_load_confidence: str | None = None,
         notes: str = "",
+        **kwargs,  # Catch any extra kwargs and ignore them
     ) -> None:
         """Log EV charging metrics to CSV file."""
         if not self.csv_writer or not self.csv_file:
             return
 
         try:
+            # Log any unexpected kwargs for debugging
+            if kwargs:
+                logger.debug(f"Extra kwargs received (ignoring): {list(kwargs.keys())}")
+
             # Create metrics row with current timestamp
             row = {
                 "timestamp": datetime.now().isoformat(),
-                "battery_soc_percent": battery_soc,
-                "battery_soc_realtime_percent": battery_soc_realtime,
-                "battery_soc_confidence": battery_soc_confidence,
-                "battery_soc_source": battery_soc_source,
-                "battery_charging_rate_pct_per_hour": battery_charging_rate_pct_per_hour,
-                "battery_power_w": battery_power,
+                "home_batt_soc_percent": home_batt_soc,
+                "home_batt_soc_realtime_percent": home_batt_soc_realtime,
+                "home_batt_soc_confidence": home_batt_soc_confidence,
+                "home_batt_soc_source": home_batt_soc_source,
+                "home_batt_charging_rate_pct_per_hour": home_batt_charging_rate_pct_per_hour,
+                "home_batt_power_w": home_batt_power,
                 "grid_power_flow_w": grid_power_flow,
                 "solar_power_w": solar_power,
                 "ev_charging_amps": ev_charging_amps,
                 "ev_policy": ev_policy,
-                "tesla_car_soc": tesla_car_soc,
-                "tesla_car_charging_power": tesla_car_charging_power,
-                "tesla_car_charging_state": tesla_car_charging_state,
-                "tesla_car_range_km": tesla_car_range_km,
-                "tesla_car_est_range_km": tesla_car_est_range_km,
-                "wall_connector_power": wall_connector_power,
-                "wall_connector_amps": wall_connector_amps,
-                "house_load_estimate": house_load_estimate,
+                "ev_soc_percent": ev_soc,
+                "ev_charging_power_w": ev_charging_power,
+                "ev_charging_state": ev_charging_state,
+                "ev_range_km": ev_range_km,
+                "ev_est_range_km": ev_est_range_km,
+                "ev_wc_power_w": ev_wc_power,
+                "ev_wc_amps": ev_wc_amps,
+                "house_load_estimate_w": house_load_estimate,
                 "house_load_confidence": house_load_confidence,
                 "notes": notes,
             }
@@ -134,7 +139,7 @@ class MetricsLogger:
             self.csv_file.flush()
 
             logger.debug(
-                f"Logged metrics: SOC={battery_soc}%, Grid={grid_power_flow}W, EV={ev_charging_amps}A"
+                f"Logged metrics: SOC={home_batt_soc}%, Grid={grid_power_flow}W, EV={ev_charging_amps}A"
             )
 
         except Exception as e:

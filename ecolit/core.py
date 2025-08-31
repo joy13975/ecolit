@@ -70,6 +70,7 @@ class EcoliteManager:
             "last_update": 0,
         }
         self._tesla_display_sync_interval = 600  # 10 minutes
+        self._last_charging_window_state = False  # Track window state changes
 
     async def start(self) -> None:
         """Start the ECHONET Lite manager."""
@@ -422,8 +423,20 @@ class EcoliteManager:
                 else:
                     battery_soc = official_soc
 
-            # Sync Tesla display data every 10 minutes (instead of every 10 seconds)
-            await self._sync_tesla_display_data()
+            # Track charging window state changes
+            charging_window_open = self._is_charging_window_open(battery_soc, solar_power)
+            if not hasattr(self, '_last_charging_window_state'):
+                self._last_charging_window_state = False
+
+            # Force sync if charging window just opened
+            force_sync = charging_window_open and not self._last_charging_window_state
+            if force_sync:
+                logger.debug("Charging window opened - forcing Tesla sync")
+
+            self._last_charging_window_state = charging_window_open
+
+            # Sync Tesla display data only when charging window is open (with parameters)
+            await self._sync_tesla_display_data(battery_soc, solar_power, force=force_sync)
 
             # Use cached Tesla data for display and Wall Connector for real-time charging data
             tesla_car_charging_power = None
@@ -477,7 +490,7 @@ class EcoliteManager:
                 if not self.dry_run and self.tesla_controller:
                     try:
                         control_result = await self.tesla_controller.execute_charging_control(
-                            ev_amps
+                            ev_amps, battery_soc, solar_power
                         )
 
                         # Log control actions taken
@@ -634,30 +647,30 @@ class EcoliteManager:
                 realtime_soc_data = {}
                 if battery_data:
                     realtime_soc_data = {
-                        "battery_soc_realtime": battery_data.get("realtime_soc"),
-                        "battery_soc_confidence": battery_data.get("soc_confidence"),
-                        "battery_soc_source": battery_data.get("soc_source"),
-                        "battery_charging_rate_pct_per_hour": battery_data.get(
+                        "home_batt_soc_realtime": battery_data.get("realtime_soc"),
+                        "home_batt_soc_confidence": battery_data.get("soc_confidence"),
+                        "home_batt_soc_source": battery_data.get("soc_source"),
+                        "home_batt_charging_rate_pct_per_hour": battery_data.get(
                             "charging_rate_pct_per_hour"
                         ),
                     }
 
                 # Prepare Tesla data for logging
                 tesla_data = {
-                    "tesla_car_soc": tesla_car_soc,
-                    "tesla_car_charging_power": tesla_car_charging_power,
-                    "tesla_car_charging_state": tesla_car_charging_state,
-                    "tesla_car_range_km": tesla_car_range,
-                    "tesla_car_est_range_km": tesla_car_est_range,
-                    "wall_connector_power": wall_connector_power,
-                    "wall_connector_amps": wall_connector_amps,
+                    "ev_soc": tesla_car_soc,
+                    "ev_charging_power": tesla_car_charging_power,
+                    "ev_charging_state": tesla_car_charging_state,
+                    "ev_range_km": tesla_car_range,
+                    "ev_est_range_km": tesla_car_est_range,
+                    "ev_wc_power": wall_connector_power,
+                    "ev_wc_amps": wall_connector_amps,
                     "house_load_estimate": house_load,
                     "house_load_confidence": confidence,
                 }
 
                 self.metrics_logger.log_metrics(
-                    battery_soc=official_soc,  # Log official SoC separately
-                    battery_power=battery_power,
+                    home_batt_soc=official_soc,  # Log official SoC separately
+                    home_batt_power=battery_power,
                     grid_power_flow=grid_power_flow,
                     solar_power=solar_power,
                     ev_charging_amps=ev_amps,
@@ -669,22 +682,58 @@ class EcoliteManager:
         except Exception as e:
             logger.error(f"Error in polling loop: {e}")
 
-    async def _sync_tesla_display_data(self) -> None:
-        """Sync Tesla display data every 10 minutes to reduce API calls.
+    def _is_charging_window_open(self, battery_soc: float, solar_power: float) -> bool:
+        """Check if conditions allow EV charging based on policy and thresholds.
 
-        This replaces the continuous Tesla API polling in the main loop.
-        Only syncs SOC, charging state, and range for display purposes.
+        Args:
+            battery_soc: Home battery SOC percentage
+            solar_power: Solar power generation in watts
+
+        Returns:
+            True if charging window is open, False otherwise
+        """
+        if not self.ev_controller.is_enabled():
+            return False
+
+        # Get current policy from EV controller
+        policy_name = self.ev_controller.get_current_policy()
+
+        if policy_name == "ECO":
+            # ECO policy: Charge when home battery > 95% (has surplus)
+            return battery_soc is not None and battery_soc > 95.0
+        elif policy_name == "SOLAR":
+            # SOLAR policy: Only when significant solar available
+            return solar_power is not None and solar_power > 1000  # 1kW minimum
+        elif policy_name == "FORCE":
+            # FORCE policy: Always charge (ignore conditions)
+            return True
+        else:
+            # Unknown policy: conservative approach
+            return False
+
+    async def _sync_tesla_display_data(self, battery_soc: float = None, solar_power: float = None, force: bool = False) -> None:
+        """Sync Tesla display data only when charging window is open to minimize API calls.
+
+        Args:
+            battery_soc: Home battery SOC percentage
+            solar_power: Solar power generation in watts
+            force: Force sync regardless of conditions
         """
         import time
+
+        if not (self.tesla_client and self.tesla_client.is_enabled()):
+            return
+
+        # Skip sync if charging window is closed (unless forced)
+        if not force and not self._is_charging_window_open(battery_soc, solar_power):
+            logger.debug("Skipping Tesla sync - charging window closed")
+            return
 
         current_time = time.time()
         time_since_last = current_time - self._cached_tesla_state["last_update"]
 
-        # Only sync if it's been more than 10 minutes or we have no data
-        if time_since_last < self._tesla_display_sync_interval and self._cached_tesla_state["soc"] is not None:
-            return
-
-        if not (self.tesla_client and self.tesla_client.is_enabled()):
+        # Only sync if it's been more than 10 minutes or we have no data (unless forced)
+        if not force and time_since_last < self._tesla_display_sync_interval and self._cached_tesla_state["soc"] is not None:
             return
 
         try:
