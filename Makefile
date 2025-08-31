@@ -15,7 +15,7 @@ help:
 	@echo "  make lint        - Run ruff linter"
 	@echo "  make format      - Format code with ruff"
 	@echo "  make run         - Run the main application in control mode"
-	@echo "  make run --dry   - Run in dry-run mode (monitoring only)"
+	@echo "  make run-dry     - Run in dry-run mode (monitoring only)"
 	@echo "  make stop        - Stop any running ecolit processes"
 	@echo "  make scan        - Scan for ECHONET Lite devices"
 	@echo "  make clean       - Clean cache and build files"
@@ -44,8 +44,11 @@ format:
 run:
 	uv run python -m ecolit $(filter-out $@,$(MAKECMDGOALS))
 
-# Handle --dry flag for make run --dry
---dry:
+run-dry:
+	uv run python -m ecolit --dry
+
+# Catch-all for arguments passed to run
+%:
 	@:
 
 scan:
