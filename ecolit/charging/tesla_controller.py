@@ -48,11 +48,14 @@ class TeslaChargingController:
 
         logger.info("Tesla charging controller initialized")
 
-    async def execute_charging_control(self, target_amps: int) -> dict[str, Any]:
+    async def execute_charging_control(self, target_amps: int, battery_soc: float = None, solar_power: float = None, policy_name: str = None) -> dict[str, Any]:
         """Execute charging control with intelligent wake-up and validation.
 
         Args:
             target_amps: Target charging amperage (0 to stop)
+            battery_soc: Home battery SOC percentage
+            solar_power: Solar power generation in watts
+            policy_name: EV charging policy name
 
         Returns:
             Dict with status information and any error messages
@@ -70,7 +73,7 @@ class TeslaChargingController:
 
         try:
             # Step 1: Get vehicle data with caching to minimize API calls
-            vehicle_data, was_sleeping = await self._get_cached_vehicle_data()
+            vehicle_data, was_sleeping = await self._get_cached_vehicle_data(battery_soc=battery_soc, solar_power=solar_power, policy_name=policy_name)
 
             if was_sleeping:
                 wake_result = await self._handle_wake_up()
@@ -83,7 +86,7 @@ class TeslaChargingController:
                 await self._sleep(3)
 
                 # Get fresh data after wake-up (force refresh)
-                vehicle_data, _ = await self._get_cached_vehicle_data(force_refresh=True)
+                vehicle_data, _ = await self._get_cached_vehicle_data(force_refresh=True, battery_soc=battery_soc, solar_power=solar_power, policy_name=policy_name)
 
             # Step 2: Basic connection validation (always required)
             basic_validation = await self._validate_basic_charging_conditions(vehicle_data)
@@ -111,7 +114,7 @@ class TeslaChargingController:
 
                 # Set target amperage (only if different from current)
                 # Use local state for quick checks, fresh data for actual commands
-                if self._should_sync_tesla():
+                if self._should_sync_tesla(battery_soc, solar_power, policy_name):
                     # We just synced, use fresh data from vehicle_data
                     current_amps = getattr(vehicle_data, "charge_amps", None)
                 else:
@@ -140,7 +143,7 @@ class TeslaChargingController:
             else:
                 # Target amps is 0, we want to stop
                 # Use local state for charging state to avoid unnecessary API calls
-                if self._should_sync_tesla():
+                if self._should_sync_tesla(battery_soc, solar_power, policy_name):
                     # We just synced, use fresh data from vehicle_data
                     current_charging_state = vehicle_data.charging_state
                 else:
@@ -166,11 +169,14 @@ class TeslaChargingController:
 
         return result
 
-    async def _get_cached_vehicle_data(self, force_refresh: bool = False) -> tuple[Any, bool]:
+    async def _get_cached_vehicle_data(self, force_refresh: bool = False, battery_soc: float = None, solar_power: float = None, policy_name: str = None) -> tuple[Any, bool]:
         """Get vehicle data with intelligent caching and 10-minute sync to minimize API calls.
 
         Args:
             force_refresh: Force a fresh API call even if cache is valid
+            battery_soc: Home battery SOC percentage
+            solar_power: Solar power generation in watts
+            policy_name: EV charging policy name
 
         Returns:
             Tuple of (vehicle_data, was_sleeping)
@@ -178,7 +184,7 @@ class TeslaChargingController:
         current_time = time.time()
 
         # Check if we need to sync with Tesla (every 10 minutes or if no local state)
-        should_sync = force_refresh or self._should_sync_tesla()
+        should_sync = force_refresh or self._should_sync_tesla(battery_soc, solar_power, policy_name)
 
         # Use cache if valid and not forcing refresh and don't need sync
         if (
@@ -487,16 +493,35 @@ class TeslaChargingController:
 
         await asyncio.sleep(seconds)
 
-    def _should_sync_tesla(self) -> bool:
-        """Check if we should sync with Tesla API (every 10 minutes)."""
+    def _is_charging_window_open(self, battery_soc: float, solar_power: float, policy_name: str) -> bool:
+        """Determine if charging window is open based on policy and energy conditions."""
+        if policy_name == "ECO":
+            return battery_soc is not None and battery_soc > 95.0
+        elif policy_name == "SOLAR":
+            return solar_power is not None and solar_power > 1000
+        elif policy_name == "FORCE":
+            return True
+        else:
+            return False
+
+    def _should_sync_tesla(self, battery_soc: float = None, solar_power: float = None, policy_name: str = None) -> bool:
+        """Check if we should sync with Tesla API (every 10 minutes + charging window check)."""
         import time
 
         current_time = time.time()
         time_since_sync = current_time - self._local_tesla_state["last_sync"]
 
-        # Sync if it's been more than 10 minutes or we have no local state
-        return (time_since_sync >= self._tesla_sync_interval or
-                self._local_tesla_state["current_amps"] is None)
+        # Always sync if it's been more than 10 minutes or we have no local state
+        if (time_since_sync >= self._tesla_sync_interval or
+                self._local_tesla_state["current_amps"] is None):
+            return True
+
+        # Only sync if charging window is open to minimize unnecessary API calls
+        if policy_name:
+            return self._is_charging_window_open(battery_soc, solar_power, policy_name)
+        else:
+            # If no policy provided, fallback to always sync (conservative)
+            return True
 
     async def _sync_local_tesla_state(self, vehicle_data) -> None:
         """Update local Tesla state to reduce API calls.

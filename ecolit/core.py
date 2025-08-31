@@ -489,8 +489,10 @@ class EcoliteManager:
                 # Execute actual charging control if not in dry-run mode
                 if not self.dry_run and self.tesla_controller:
                     try:
+                        # Get current EV policy name
+                        policy_name = self.ev_controller.get_current_policy()
                         control_result = await self.tesla_controller.execute_charging_control(
-                            ev_amps, battery_soc, solar_power
+                            ev_amps, battery_soc, solar_power, policy_name
                         )
 
                         # Log control actions taken
