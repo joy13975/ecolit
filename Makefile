@@ -1,10 +1,14 @@
-.PHONY: help install dev test lint format run scan clean shell sync add upgrade stop test-tesla tesla-list tesla-discover tesla-config tesla-mint tesla-refresh tesla-control
+.PHONY: help install dev test test-full test-behavior test-integration test-backtest lint format run scan clean shell sync add upgrade stop test-tesla tesla-list tesla-discover tesla-config tesla-mint tesla-refresh tesla-control
 
 help:
 	@echo "Available commands:"
 	@echo "  make install     - Install production dependencies"
 	@echo "  make dev         - Install development dependencies"
-	@echo "  make test        - Run tests"
+	@echo "  make test        - Run all EV charging tests (behavior + integration + backtest)"
+	@echo "  make test-full   - Run complete test suite with coverage"
+	@echo "  make test-behavior - Run EV charging behavior tests with clear criteria"
+	@echo "  make test-integration - Run full integration tests with synthetic data"
+	@echo "  make test-backtest - Run time-accelerated backtesting with real timing"
 	@echo "  make test-tesla     - Test Tesla API client (SAFE: read-only, no charging commands)"
 	@echo "  make tesla-list     - List registered Tesla products (SAFE: read-only)"
 	@echo "  make tesla-control  - Interactive Tesla charging control CLI"
@@ -31,8 +35,32 @@ dev:
 	uv sync
 	uv add --dev ruff pytest pytest-cov pytest-asyncio
 
-test:
+test: test-behavior test-integration test-backtest
+	@echo ""
+	@echo "🎯 All tests completed - behavior, integration, and time-accelerated backtesting"
+
+test-full:
 	uv run pytest tests/ -v --cov=ecolit --cov-report=term-missing
+
+test-behavior:
+	@echo "Running EV charging behavior tests with deterministic success criteria..."
+	@echo "✅ DETERMINISTIC TESTS: Clear pass/fail criteria for each scenario"
+	@echo ""
+	uv run pytest tests/test_ev_charging_behavior.py -v
+
+test-integration:
+	@echo "Running full integration tests with synthetic data..."
+	@echo "🔗 INTEGRATION: Full app pipeline with realistic synthetic data & clear criteria"
+	@echo ""
+	@mkdir -p data/synth
+	uv run pytest tests/test_ev_charging_behavior.py::TestEVChargingIntegration -v
+
+test-backtest:
+	@echo "Running energy flow effects testing with grid import prevention..."
+	@echo "⚡ ENERGY FLOW: Validates ECO/HURRY prevent grid import, EMERGENCY maximizes EV charging"
+	@echo ""
+	@mkdir -p data/synth
+	uv run pytest tests/test_ev_charging_behavior.py::TestEnergyFlowEffects -v
 
 lint:
 	uv run ruff check .
