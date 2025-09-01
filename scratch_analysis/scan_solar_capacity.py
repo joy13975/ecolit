@@ -17,10 +17,7 @@ from pychonet import HomeSolarPower
 from ecolit.config import load_config
 
 # Set up logging to see all EPC reads
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Common solar capacity-related EPCs to check
@@ -36,7 +33,6 @@ CAPACITY_RELATED_EPCS = {
     0x97: "Installation capacity",
     0x98: "Connected capacity",
     0x99: "Power limit",
-
     # Additional potential EPCs
     0xA0: "Output power control 1",
     0xA1: "Output power control 2",
@@ -48,7 +44,6 @@ CAPACITY_RELATED_EPCS = {
     0xA7: "Output threshold",
     0xA8: "Max output setting",
     0xA9: "Output configuration",
-
     # B0 range
     0xB0: "Capacity setting 1",
     0xB1: "Capacity setting 2",
@@ -60,7 +55,6 @@ CAPACITY_RELATED_EPCS = {
     0xB7: "Usable capacity",
     0xB8: "Total capacity",
     0xB9: "Net capacity",
-
     # C0 range
     0xC0: "Power factor",
     0xC1: "Configuration data 1",
@@ -72,7 +66,6 @@ CAPACITY_RELATED_EPCS = {
     0xC7: "Panel configuration",
     0xC8: "Array configuration",
     0xC9: "System configuration",
-
     # D0 range
     0xD0: "System type",
     0xD1: "Output restraint",
@@ -84,7 +77,6 @@ CAPACITY_RELATED_EPCS = {
     0xD7: "Inverter rating",
     0xD8: "DC capacity",
     0xD9: "AC capacity",
-
     # E0 range (mostly dynamic values but check anyway)
     0xE6: "Generation capability",
     0xE7: "Max generation today",
@@ -105,20 +97,16 @@ EXTENDED_SCAN_EPCS = range(0x80, 0xFF)  # Scan entire valid EPC range
 async def scan_solar_device(ip: str, api_client, instance: int = 1):
     """Scan a solar device for all available EPCs and look for capacity values."""
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"Scanning Solar Device at {ip}")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
 
     found_values = {}
     capacity_candidates = []
 
     try:
         # Create solar device wrapper
-        solar_device = HomeSolarPower(
-            host=ip,
-            api_connector=api_client,
-            instance=instance
-        )
+        solar_device = HomeSolarPower(host=ip, api_connector=api_client, instance=instance)
 
         # Try to get property maps first
         print("\n📋 Getting property maps...")
@@ -126,7 +114,7 @@ async def scan_solar_device(ip: str, api_client, instance: int = 1):
             await asyncio.wait_for(solar_device.getAllPropertyMaps(), timeout=5.0)
 
             # Check what properties are available
-            if hasattr(solar_device, '_properties') and solar_device._properties:
+            if hasattr(solar_device, "_properties") and solar_device._properties:
                 available_props = list(solar_device._properties.keys())
                 print(f"✅ Device reports {len(available_props)} available properties")
                 print(f"   Properties: {[f'0x{p:02X}' for p in sorted(available_props)]}")
@@ -137,10 +125,7 @@ async def scan_solar_device(ip: str, api_client, instance: int = 1):
         print(f"\n🔍 Scanning {len(CAPACITY_RELATED_EPCS)} capacity-related EPCs...")
         for epc, description in CAPACITY_RELATED_EPCS.items():
             try:
-                value = await asyncio.wait_for(
-                    solar_device.update(epc),
-                    timeout=1.0
-                )
+                value = await asyncio.wait_for(solar_device.update(epc), timeout=1.0)
                 if value is not None:
                     found_values[epc] = value
                     print(f"  0x{epc:02X} ({description}): {value}")
@@ -153,29 +138,35 @@ async def scan_solar_device(ip: str, api_client, instance: int = 1):
                     if isinstance(value, (int, float)):
                         # Check for values around 5-6kW
                         if 4000 <= value <= 7000:  # Watts
-                            capacity_candidates.append({
-                                'epc': epc,
-                                'description': description,
-                                'value': value,
-                                'unit': 'W',
-                                'kw': value / 1000
-                            })
+                            capacity_candidates.append(
+                                {
+                                    "epc": epc,
+                                    "description": description,
+                                    "value": value,
+                                    "unit": "W",
+                                    "kw": value / 1000,
+                                }
+                            )
                         elif 4 <= value <= 7:  # Kilowatts
-                            capacity_candidates.append({
-                                'epc': epc,
-                                'description': description,
-                                'value': value,
-                                'unit': 'kW',
-                                'kw': value
-                            })
+                            capacity_candidates.append(
+                                {
+                                    "epc": epc,
+                                    "description": description,
+                                    "value": value,
+                                    "unit": "kW",
+                                    "kw": value,
+                                }
+                            )
                         elif 4000000 <= value <= 7000000:  # Milliwatts
-                            capacity_candidates.append({
-                                'epc': epc,
-                                'description': description,
-                                'value': value,
-                                'unit': 'mW',
-                                'kw': value / 1000000
-                            })
+                            capacity_candidates.append(
+                                {
+                                    "epc": epc,
+                                    "description": description,
+                                    "value": value,
+                                    "unit": "mW",
+                                    "kw": value / 1000000,
+                                }
+                            )
 
             except TimeoutError:
                 pass  # Silent timeout
@@ -198,9 +189,9 @@ async def scan_solar_device(ip: str, api_client, instance: int = 1):
                         0x79,  # EOJCC for solar
                         instance,
                         0x62,  # GET
-                        [{"EPC": epc}]
+                        [{"EPC": epc}],
                     ),
-                    timeout=1.0
+                    timeout=1.0,
                 )
                 if response and epc in response:
                     value = response[epc]
@@ -209,18 +200,20 @@ async def scan_solar_device(ip: str, api_client, instance: int = 1):
                     # Parse value if it's bytes
                     if isinstance(value, bytes):
                         if len(value) == 2:
-                            int_val = int.from_bytes(value, 'big')
+                            int_val = int.from_bytes(value, "big")
                             print(f"    -> {int_val} (16-bit)")
                             if 4000 <= int_val <= 7000:
-                                capacity_candidates.append({
-                                    'epc': epc,
-                                    'description': f'Raw EPC 0x{epc:02X}',
-                                    'value': int_val,
-                                    'unit': 'W',
-                                    'kw': int_val / 1000
-                                })
+                                capacity_candidates.append(
+                                    {
+                                        "epc": epc,
+                                        "description": f"Raw EPC 0x{epc:02X}",
+                                        "value": int_val,
+                                        "unit": "W",
+                                        "kw": int_val / 1000,
+                                    }
+                                )
                         elif len(value) == 4:
-                            int_val = int.from_bytes(value, 'big')
+                            int_val = int.from_bytes(value, "big")
                             print(f"    -> {int_val} (32-bit)")
 
             except:
@@ -235,15 +228,15 @@ async def scan_solar_device(ip: str, api_client, instance: int = 1):
 async def main():
     """Main scanning function."""
     print("☀️ Solar Panel Capacity Scanner")
-    print("="*80)
+    print("=" * 80)
 
     # Load configuration
     config = load_config()
 
     # Find solar devices
     solar_devices = []
-    for device in config['devices']['required']:
-        if device['type'] == 'solar':
+    for device in config["devices"]["required"]:
+        if device["type"] == "solar":
             solar_devices.append(device)
             print(f"Found solar device: {device['name']} at {device['ip']}")
 
@@ -258,14 +251,14 @@ async def main():
     # Create UDP server and API client
     udp_server = UDPServer()
     loop = asyncio.get_event_loop()
-    udp_server.run('0.0.0.0', 3610, loop=loop)
+    udp_server.run("0.0.0.0", 3610, loop=loop)
     api_client = api(server=udp_server)
 
     # Need to discover devices first
     print("\nDiscovering devices on network...")
     for device in solar_devices:
         try:
-            success = await asyncio.wait_for(api_client.discover(device['ip']), timeout=5.0)
+            success = await asyncio.wait_for(api_client.discover(device["ip"]), timeout=5.0)
             if success:
                 print(f"✅ Discovered devices at {device['ip']}")
                 # Wait for discovery to complete
@@ -280,22 +273,20 @@ async def main():
     # Scan each solar device
     for device in solar_devices:
         values, candidates = await scan_solar_device(
-            device['ip'],
-            api_client,
-            device.get('instance', 1)
+            device["ip"], api_client, device.get("instance", 1)
         )
         all_candidates.extend(candidates)
 
     # Report findings
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("📊 CAPACITY CANDIDATE SUMMARY")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
 
     if all_candidates:
         print(f"\nFound {len(all_candidates)} potential capacity values:\n")
 
         # Sort by kW value
-        all_candidates.sort(key=lambda x: x['kw'])
+        all_candidates.sort(key=lambda x: x["kw"])
 
         for candidate in all_candidates:
             print(f"  EPC 0x{candidate['epc']:02X} ({candidate['description']}):")
@@ -303,9 +294,9 @@ async def main():
             print(f"    In kW: {candidate['kw']:.2f} kW")
 
             # Check against expected values
-            if 5.9 <= candidate['kw'] <= 6.2:
+            if 5.9 <= candidate["kw"] <= 6.2:
                 print("    🎯 CLOSE MATCH to reported 6.07kW installation!")
-            elif 4.8 <= candidate['kw'] <= 5.2:
+            elif 4.8 <= candidate["kw"] <= 5.2:
                 print("    🎯 CLOSE MATCH to observed ~5kW maximum!")
             print()
     else:
