@@ -200,9 +200,13 @@ class TeslaAPIClient:
                             else:
                                 # Refresh failed, try OAuth as last resort (only if login_required)
                                 if "login_required" in error_text:
-                                    logger.warning("🔑 Tesla refresh token expired - starting OAuth flow...")
+                                    logger.warning(
+                                        "🔑 Tesla refresh token expired - starting OAuth flow..."
+                                    )
                                     if await self._mint_new_tokens():
-                                        logger.info("✅ New Tesla tokens obtained - retrying authentication")
+                                        logger.info(
+                                            "✅ New Tesla tokens obtained - retrying authentication"
+                                        )
                                         await self._reload_config()
                                         self._refresh_attempted = False  # Reset flag for new tokens
                                         return await self._get_access_token()
@@ -366,7 +370,6 @@ class TeslaAPIClient:
         except Exception as e:
             logger.error(f"Failed to get Tesla vehicle data: {e}")
             return TeslaVehicleData()
-
 
     async def get_charging_config(self) -> dict[str, Any]:
         """Get current vehicle charging configuration including amp settings."""

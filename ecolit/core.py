@@ -73,7 +73,9 @@ class EcoliteManager:
         self._last_charging_window_state = False  # Track window state changes
 
         # Separate polling intervals and tracking
-        self._home_polling_interval = config.get("polling", {}).get("home_interval", 10)  # Default 10s for HEMS
+        self._home_polling_interval = config.get("polling", {}).get(
+            "home_interval", 10
+        )  # Default 10s for HEMS
         self._last_tesla_poll = 0
         self._last_home_metrics_log = 0
         self._latest_home_data = {}  # Shared data between home and Tesla loops
@@ -111,18 +113,27 @@ class EcoliteManager:
                         if vehicle_data and vehicle_data.battery_level is not None:
                             # Vehicle was already awake - use the data
                             import time
-                            self._cached_tesla_state.update({
-                                "soc": vehicle_data.battery_level,
-                                "charging_state": vehicle_data.charging_state,
-                                "range": vehicle_data.battery_range,
-                                "est_range": vehicle_data.est_battery_range,
-                                "last_update": time.time(),
-                            })
-                            logger.info(f"Tesla data available on startup: SOC={vehicle_data.battery_level}%, State={vehicle_data.charging_state}")
+
+                            self._cached_tesla_state.update(
+                                {
+                                    "soc": vehicle_data.battery_level,
+                                    "charging_state": vehicle_data.charging_state,
+                                    "range": vehicle_data.battery_range,
+                                    "est_range": vehicle_data.est_battery_range,
+                                    "last_update": time.time(),
+                                }
+                            )
+                            logger.info(
+                                f"Tesla data available on startup: SOC={vehicle_data.battery_level}%, State={vehicle_data.charging_state}"
+                            )
                         else:
-                            logger.info("Tesla vehicle sleeping on startup - will check only when solar surplus appears")
+                            logger.info(
+                                "Tesla vehicle sleeping on startup - will check only when solar surplus appears"
+                            )
                     except Exception as e:
-                        logger.info(f"Tesla not accessible on startup: {e} - will check only when solar surplus appears")
+                        logger.info(
+                            f"Tesla not accessible on startup: {e} - will check only when solar surplus appears"
+                        )
             except Exception as e:
                 logger.error(f"Failed to initialize Tesla API client: {e}")
                 logger.warning("Tesla data will not be available")
@@ -371,8 +382,12 @@ class EcoliteManager:
 
     async def _tesla_monitor_loop(self) -> None:
         """Tesla monitoring loop (event-driven, configurable retry intervals)."""
-        tesla_retry_interval = self.config.get("polling", {}).get("tesla_retry_interval", 10) * 60  # Convert minutes to seconds
-        logger.info(f"Starting Tesla monitoring loop (retry every {tesla_retry_interval//60} minutes during surplus)")
+        tesla_retry_interval = (
+            self.config.get("polling", {}).get("tesla_retry_interval", 10) * 60
+        )  # Convert minutes to seconds
+        logger.info(
+            f"Starting Tesla monitoring loop (retry every {tesla_retry_interval // 60} minutes during surplus)"
+        )
         while self._running:
             try:
                 await self._poll_tesla_data()
@@ -440,6 +455,7 @@ class EcoliteManager:
         """Poll home energy devices (solar, battery) for current data."""
         logger.debug("Starting home device poll cycle")
         import time
+
         current_time = time.time()
 
         try:
@@ -492,13 +508,17 @@ class EcoliteManager:
 
             # Log home metrics every 30 seconds (3x less frequent than polling)
             if current_time - self._last_home_metrics_log >= 30:
-                self._log_home_metrics(battery_soc, battery_power, solar_power, official_soc, battery_data)
+                self._log_home_metrics(
+                    battery_soc, battery_power, solar_power, official_soc, battery_data
+                )
                 self._last_home_metrics_log = current_time
 
         except Exception as e:
             logger.error(f"Error in home polling loop: {e}")
 
-    def _log_home_metrics(self, battery_soc, battery_power, solar_power, official_soc, battery_data):
+    def _log_home_metrics(
+        self, battery_soc, battery_power, solar_power, official_soc, battery_data
+    ):
         """Log home energy metrics separately."""
         home_stats = []
 
@@ -543,7 +563,9 @@ class EcoliteManager:
                 # Add time to target SOC
                 if self.battery_poller and self.battery_instance and battery_power is not None:
                     if battery_power > 10:  # Charging
-                        time_to_full = self.battery_poller.realtime_soc_estimator.get_time_to_target_soc(100)
+                        time_to_full = (
+                            self.battery_poller.realtime_soc_estimator.get_time_to_target_soc(100)
+                        )
                         if time_to_full is not None and time_to_full > 0:
                             if time_to_full < 1:
                                 minutes = int(time_to_full * 60)
@@ -552,7 +574,11 @@ class EcoliteManager:
                                 estimates.append(f"To100%:{time_to_full:.1f}h")
                     elif battery_power < -10:  # Discharging
                         reserve_soc = self.battery_instance.get("target_soc_percent", 20)
-                        time_to_reserve = self.battery_poller.realtime_soc_estimator.get_time_to_target_soc(reserve_soc)
+                        time_to_reserve = (
+                            self.battery_poller.realtime_soc_estimator.get_time_to_target_soc(
+                                reserve_soc
+                            )
+                        )
                         if time_to_reserve is not None and time_to_reserve > 0:
                             if time_to_reserve < 1:
                                 minutes = int(time_to_reserve * 60)
@@ -567,9 +593,10 @@ class EcoliteManager:
     async def _poll_tesla_data(self) -> None:
         """Event-driven Tesla polling - only check when solar surplus exists and we haven't started charging."""
         import time
+
         current_time = time.time()
 
-        if not hasattr(self, '_latest_home_data'):
+        if not hasattr(self, "_latest_home_data"):
             logger.debug("Tesla polling skipped - no home data available yet")
             return
 
@@ -590,7 +617,9 @@ class EcoliteManager:
             # Check if solar surplus exists
             has_solar_surplus = solar_power is not None and solar_power > surplus_threshold
 
-            logger.debug(f"Solar surplus check: {solar_power}W vs {surplus_threshold}W threshold = {has_solar_surplus}")
+            logger.debug(
+                f"Solar surplus check: {solar_power}W vs {surplus_threshold}W threshold = {has_solar_surplus}"
+            )
 
             if not has_solar_surplus:
                 # No surplus - reset flag for next surplus event and stop charging if needed
@@ -641,8 +670,10 @@ class EcoliteManager:
                         try:
                             policy_name = self.ev_controller.get_current_policy()
                             # Use wake version for starting charging
-                            control_result = await self.tesla_controller.execute_charging_control_with_wake(
-                                ev_amps, battery_soc, solar_power, policy_name
+                            control_result = (
+                                await self.tesla_controller.execute_charging_control_with_wake(
+                                    ev_amps, battery_soc, solar_power, policy_name
+                                )
                             )
 
                             # Log control actions taken
@@ -695,7 +726,9 @@ class EcoliteManager:
                         "amps": vehicle_current,
                         "last_update": time.time(),
                     }
-                logger.debug(f"Wall Connector: {vehicle_current}A @ {grid_voltage}V = {wall_connector_power:.1f}kW")
+                logger.debug(
+                    f"Wall Connector: {vehicle_current}A @ {grid_voltage}V = {wall_connector_power:.1f}kW"
+                )
         except Exception as e:
             logger.debug(f"Wall Connector data unavailable: {e}")
 
@@ -708,31 +741,52 @@ class EcoliteManager:
         tesla_car_est_range = self._cached_tesla_state.get("est_range")
 
         # Get wall connector data
-        wall_connector_data = getattr(self, '_wall_connector_data', {})
+        wall_connector_data = getattr(self, "_wall_connector_data", {})
         wall_connector_amps = wall_connector_data.get("amps", 0)
         tesla_car_charging_power = wall_connector_data.get("power", 0)
 
         # Only log if we have fresh Tesla data (within last 30 minutes) or active wall connector data
         last_update = self._cached_tesla_state.get("last_update", 0)
-        tesla_data_age = current_time - last_update if last_update and last_update > 0 else float('inf')
+        tesla_data_age = (
+            current_time - last_update if last_update and last_update > 0 else float("inf")
+        )
 
         if tesla_data_age < 1800 or wall_connector_amps > 0:
             self._log_tesla_metrics(
-                tesla_car_soc, tesla_car_charging_state, tesla_car_range, tesla_car_est_range,
-                tesla_car_charging_power, wall_connector_amps, ev_amps
+                tesla_car_soc,
+                tesla_car_charging_state,
+                tesla_car_range,
+                tesla_car_est_range,
+                tesla_car_charging_power,
+                wall_connector_amps,
+                ev_amps,
             )
 
             # Log CSV metrics with all data
             if self.ev_controller.is_enabled():
                 home_data = self._latest_home_data
                 self._log_csv_metrics(
-                    home_data, tesla_car_soc, tesla_car_charging_power, tesla_car_charging_state,
-                    tesla_car_range, tesla_car_est_range, tesla_car_charging_power, wall_connector_amps,
-                    ev_amps
+                    home_data,
+                    tesla_car_soc,
+                    tesla_car_charging_power,
+                    tesla_car_charging_state,
+                    tesla_car_range,
+                    tesla_car_est_range,
+                    tesla_car_charging_power,
+                    wall_connector_amps,
+                    ev_amps,
                 )
 
-    def _log_tesla_metrics(self, tesla_car_soc, tesla_car_charging_state, tesla_car_range,
-                          tesla_car_est_range, tesla_car_charging_power, wall_connector_amps, ev_amps):
+    def _log_tesla_metrics(
+        self,
+        tesla_car_soc,
+        tesla_car_charging_state,
+        tesla_car_range,
+        tesla_car_est_range,
+        tesla_car_charging_power,
+        wall_connector_amps,
+        ev_amps,
+    ):
         """Log Tesla metrics separately when fresh data is available."""
         tesla_stats = []
 
@@ -785,8 +839,18 @@ class EcoliteManager:
             estimates_section = "Tesla Estimates [" + " ".join(estimates) + "]"
             logger.info(f"📈 {estimates_section}")
 
-    def _log_csv_metrics(self, home_data, tesla_car_soc, tesla_car_charging_power, tesla_car_charging_state,
-                        tesla_car_range, tesla_car_est_range, wall_connector_power, wall_connector_amps, ev_amps):
+    def _log_csv_metrics(
+        self,
+        home_data,
+        tesla_car_soc,
+        tesla_car_charging_power,
+        tesla_car_charging_state,
+        tesla_car_range,
+        tesla_car_est_range,
+        wall_connector_power,
+        wall_connector_amps,
+        ev_amps,
+    ):
         """Log comprehensive metrics to CSV file."""
         # Get real-time SoC data for logging
         realtime_soc_data = {}
@@ -796,7 +860,9 @@ class EcoliteManager:
                 "home_batt_soc_realtime": battery_data.get("realtime_soc"),
                 "home_batt_soc_confidence": battery_data.get("soc_confidence"),
                 "home_batt_soc_source": battery_data.get("soc_source"),
-                "home_batt_charging_rate_pct_per_hour": battery_data.get("charging_rate_pct_per_hour"),
+                "home_batt_charging_rate_pct_per_hour": battery_data.get(
+                    "charging_rate_pct_per_hour"
+                ),
             }
 
         # Prepare Tesla data for logging
@@ -854,7 +920,9 @@ class EcoliteManager:
             # Unknown policy: conservative approach
             return False
 
-    async def _sync_tesla_display_data(self, battery_soc: float = None, solar_power: float = None, force: bool = False) -> None:
+    async def _sync_tesla_display_data(
+        self, battery_soc: float = None, solar_power: float = None, force: bool = False
+    ) -> None:
         """Sync Tesla display data only when charging window is open to minimize API calls.
 
         Args:
@@ -876,21 +944,29 @@ class EcoliteManager:
         time_since_last = current_time - self._cached_tesla_state["last_update"]
 
         # Only sync if it's been more than 10 minutes or we have no data (unless forced)
-        if not force and time_since_last < self._tesla_display_sync_interval and self._cached_tesla_state["soc"] is not None:
+        if (
+            not force
+            and time_since_last < self._tesla_display_sync_interval
+            and self._cached_tesla_state["soc"] is not None
+        ):
             return
 
         try:
             # Use get_vehicle_data (never wakes sleeping vehicles) only every 10 minutes
             tesla_vehicle_data = await self.tesla_client.get_vehicle_data()
             if tesla_vehicle_data and tesla_vehicle_data.timestamp:
-                self._cached_tesla_state.update({
-                    "soc": tesla_vehicle_data.battery_level,
-                    "charging_state": tesla_vehicle_data.charging_state,
-                    "range": tesla_vehicle_data.battery_range,
-                    "est_range": tesla_vehicle_data.est_battery_range,
-                    "last_update": current_time,
-                })
-                logger.debug(f"Tesla display data synced: SOC={tesla_vehicle_data.battery_level}%, State={tesla_vehicle_data.charging_state}")
+                self._cached_tesla_state.update(
+                    {
+                        "soc": tesla_vehicle_data.battery_level,
+                        "charging_state": tesla_vehicle_data.charging_state,
+                        "range": tesla_vehicle_data.battery_range,
+                        "est_range": tesla_vehicle_data.est_battery_range,
+                        "last_update": current_time,
+                    }
+                )
+                logger.debug(
+                    f"Tesla display data synced: SOC={tesla_vehicle_data.battery_level}%, State={tesla_vehicle_data.charging_state}"
+                )
             else:
                 logger.debug("Tesla vehicle data unavailable for display sync")
         except Exception as e:

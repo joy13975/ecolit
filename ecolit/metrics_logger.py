@@ -66,19 +66,21 @@ class MetricsLogger:
         try:
             # Check if file exists to determine if we should append or create new
             file_exists = self.csv_file_path.exists()
-            
+
             # Open CSV file in append mode if exists, write mode if new
             mode = "a" if file_exists else "w"
             self.csv_file = open(self.csv_file_path, mode, newline="", buffering=1)
             self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=self.csv_headers)
-            
+
             # Only write header if creating new file
             if not file_exists:
                 self.csv_writer.writeheader()
                 self.csv_file.flush()
                 logger.info(f"Metrics logging initialized (new file): {self.csv_file_path}")
             else:
-                logger.info(f"Metrics logging initialized (appending to existing): {self.csv_file_path}")
+                logger.info(
+                    f"Metrics logging initialized (appending to existing): {self.csv_file_path}"
+                )
 
         except Exception as e:
             logger.error(f"Failed to initialize metrics logging: {e}")
