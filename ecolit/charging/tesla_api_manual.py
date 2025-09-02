@@ -567,7 +567,7 @@ class TeslaAPIClient:
             logger.info("Tesla charging started")
             return True
         except Exception as e:
-            logger.error(f"Failed to start Tesla charging: {e}")
+            logger.error(f"⚠️　Failed to start Tesla charging: {e}")
             return False
 
     async def charge_stop(self) -> bool:

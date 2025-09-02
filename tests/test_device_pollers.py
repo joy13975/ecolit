@@ -11,7 +11,7 @@ class TestBatterySOCParsing:
     """Test the critical SOC parsing logic that broke in production."""
 
     @pytest.mark.asyncio
-    async def test_soc_parsing_real_echonet_scenario(self):
+    async def test_home_battery_soc_parsing_real_echonet_scenario(self):
         """Test the EXACT scenario that caused the bug: 0xC9 returns '0/5000' but 0xE2 returns 5358."""
         # Setup device instance and mock API client
         device_instance = {
@@ -45,10 +45,12 @@ class TestBatterySOCParsing:
         battery_device.update = AsyncMock(side_effect=mock_update)
 
         # Test the SOC reading
-        soc = await poller._read_battery_soc(battery_device)
+        home_battery_soc = await poller._read_battery_soc(battery_device)
 
         # The critical assertion: should return 53.58% not 0%!
-        assert soc == pytest.approx(53.58, 0.01), f"Expected 53.58%, got {soc}%"
+        assert home_battery_soc == pytest.approx(53.58, 0.01), (
+            f"Expected 53.58%, got {home_battery_soc}%"
+        )
 
     @pytest.mark.asyncio
     async def test_battery_polling_handles_timeout(self):
@@ -80,5 +82,5 @@ class TestBatterySOCParsing:
 
         battery_device.update = AsyncMock(side_effect=mock_update)
 
-        soc = await poller._read_battery_soc(battery_device)
-        assert soc == pytest.approx(53.58, 0.01)
+        home_battery_soc = await poller._read_battery_soc(battery_device)
+        assert home_battery_soc == pytest.approx(53.58, 0.01)

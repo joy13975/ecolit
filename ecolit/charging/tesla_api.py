@@ -493,7 +493,8 @@ class TeslaAPIClient:
                 logger.info(f"Tesla charging amps set to {amps}A")
                 return True
             else:
-                logger.error(f"Failed to set Tesla charging amps: {result}")
+                error_msg = self._parse_tesla_error(result, f"set charging amps to {amps}A")
+                logger.error(f"Failed to set Tesla charging amps: {error_msg}")
                 return False
 
         except Exception as e:
@@ -522,7 +523,9 @@ class TeslaAPIClient:
                 logger.info("Tesla charging started")
                 return True
             else:
-                logger.error(f"Failed to start Tesla charging: {result}")
+                # Parse meaningful error message instead of raw JSON
+                error_msg = self._parse_tesla_error(result, "start charging")
+                logger.error(f"⚠️　Failed to start Tesla charging: {error_msg}")
                 return False
 
         except Exception as e:
@@ -551,7 +554,8 @@ class TeslaAPIClient:
                 logger.info("Tesla charging stopped")
                 return True
             else:
-                logger.error(f"Failed to stop Tesla charging: {result}")
+                error_msg = self._parse_tesla_error(result, "stop charging")
+                logger.error(f"Failed to stop Tesla charging: {error_msg}")
                 return False
 
         except Exception as e:
@@ -688,3 +692,32 @@ class TeslaAPIClient:
             if self.vehicle_data.timestamp
             else None,
         }
+
+    def _parse_tesla_error(self, result: dict, operation: str) -> str:
+        """Parse Tesla API error response into human-readable message."""
+        if not result:
+            return f"No response from Tesla API for {operation}"
+        
+        # Extract the reason from Tesla's response
+        response = result.get("response", {})
+        reason = response.get("reason", "unknown")
+        
+        # Map common Tesla error reasons to meaningful messages
+        error_map = {
+            "requested": "Command rejected by vehicle (may be due to Wall Connector schedule, vehicle in sleep mode, or charge limit reached)",
+            "not_charging": "Vehicle is not currently charging",
+            "disconnected": "Charge cable not connected",
+            "complete": "Charging already complete (at charge limit)",
+            "mobile_access_disabled": "Mobile access is disabled in vehicle settings",
+            "user_cancelled": "Operation cancelled by user",
+            "could_not_wake_buses": "Vehicle systems are not ready (try again in a few moments)",
+            "timeout": "Vehicle did not respond to command in time"
+        }
+        
+        human_readable = error_map.get(reason, f"Unknown error: {reason}")
+        
+        # For 'requested' errors, provide more context
+        if reason == "requested":
+            human_readable += " - Check Tesla app for charging schedule or limit settings"
+        
+        return f"{human_readable} (Tesla reason: {reason})"

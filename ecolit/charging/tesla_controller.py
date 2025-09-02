@@ -41,7 +41,7 @@ class TeslaChargingController:
 
         # Local Tesla state tracking (synced every 10 minutes to reduce API calls)
         self._local_tesla_state = {
-            "soc": None,
+            "ev_soc": None,
             "charging_state": None,
             "current_amps": None,
             "last_sync": 0,
@@ -79,43 +79,73 @@ class TeslaChargingController:
                 ) = await self.tesla_client.poll_vehicle_data_with_wake_option()
 
                 if was_sleeping:
-                    # Don't claim "woken up" until we verify it's actually responsive
-                    
+                    # Vehicle is sleeping - send wake-up command first
+                    logger.info("🔔 Vehicle is sleeping, sending wake-up command...")
+                    wake_result = await self._handle_wake_up()
+
+                    if not wake_result["success"]:
+                        result["errors"].append(
+                            f"❌ Failed to send wake-up command: {wake_result.get('error', 'Unknown error')}"
+                        )
+                        return result
+
+                    logger.info("✅ Wake-up command sent successfully")
+
                     # Wait until car is FULLY awake and responsive - no hardcoded timeouts!
                     logger.info("⏳ Waiting for vehicle to be fully awake and responsive...")
                     retry_count = 0
                     max_retries = 6  # 1 minute maximum (6 attempts x 10s each)
-                    
+
                     while retry_count < max_retries:
                         await self._sleep(10)  # Always wait 10s between checks
                         retry_count += 1
-                        
+
                         try:
-                            vehicle_data, _ = await self.tesla_client.poll_vehicle_data_with_wake_option()
-                            
+                            (
+                                vehicle_data,
+                                _,
+                            ) = await self.tesla_client.poll_vehicle_data_with_wake_option()
+
                             # Check if vehicle is fully responsive
-                            if (hasattr(vehicle_data, 'charging_state') and 
-                                vehicle_data.charging_state is not None and
-                                hasattr(vehicle_data, 'battery_level') and 
-                                vehicle_data.battery_level is not None):
-                                
-                                logger.info(f"✅ Vehicle fully awake after {retry_count * 10}s - State: {vehicle_data.charging_state}")
-                                result["actions_taken"].append(f"Vehicle woken up and responsive after {retry_count * 10}s")
-                                
+                            if (
+                                hasattr(vehicle_data, "charging_state")
+                                and vehicle_data.charging_state is not None
+                                and hasattr(vehicle_data, "battery_level")
+                                and vehicle_data.battery_level is not None
+                            ):
+                                logger.info(
+                                    f"✅ Vehicle fully awake after {retry_count * 10}s - State: {vehicle_data.charging_state}"
+                                )
+                                result["actions_taken"].append(
+                                    f"Vehicle woken up and responsive after {retry_count * 10}s"
+                                )
+
                                 # Sync local state with fresh data after wake-up
-                                self._local_tesla_state["charging_state"] = vehicle_data.charging_state
-                                self._local_tesla_state["soc"] = getattr(vehicle_data, 'battery_level', None)
-                                self._local_tesla_state["current_amps"] = getattr(vehicle_data, 'charge_amps', None)
+                                self._local_tesla_state["charging_state"] = (
+                                    vehicle_data.charging_state
+                                )
+                                self._local_tesla_state["ev_soc"] = getattr(
+                                    vehicle_data, "battery_level", None
+                                )
+                                self._local_tesla_state["current_amps"] = getattr(
+                                    vehicle_data, "charge_amps", None
+                                )
                                 self._local_tesla_state["last_sync"] = time.time()
-                                logger.debug(f"Synced local state after wake-up: charging={vehicle_data.charging_state}, amps={getattr(vehicle_data, 'charge_amps', None)}")
-                                
+                                logger.debug(
+                                    f"Synced local state after wake-up: charging={vehicle_data.charging_state}, amps={getattr(vehicle_data, 'charge_amps', None)}"
+                                )
+
                                 break
                             else:
-                                logger.info(f"🔄 Vehicle still initializing... (attempt {retry_count}/{max_retries})")
-                                
+                                logger.info(
+                                    f"🔄 Vehicle still initializing... (attempt {retry_count}/{max_retries})"
+                                )
+
                         except Exception as e:
-                            logger.info(f"🔄 Vehicle API error, retrying... (attempt {retry_count}/{max_retries}): {e}")
-                    
+                            logger.info(
+                                f"🔄 Vehicle API error, retrying... (attempt {retry_count}/{max_retries}): {e}"
+                            )
+
                     if retry_count >= max_retries:
                         result["errors"].append("❌ Vehicle failed to fully wake up after 1 minute")
                         return result
@@ -190,16 +220,16 @@ class TeslaChargingController:
             if target_amps == 0:
                 # Get fresh state to verify if we actually need to stop
                 vehicle_data = await self.tesla_client.get_vehicle_data()
-                
-                if vehicle_data and hasattr(vehicle_data, 'charging_state'):
+
+                if vehicle_data and hasattr(vehicle_data, "charging_state"):
                     actual_charging_state = vehicle_data.charging_state
-                    actual_amps = getattr(vehicle_data, 'charge_amps', None)
-                    
+                    actual_amps = getattr(vehicle_data, "charge_amps", None)
+
                     # Update local cache with fresh data
                     self._local_tesla_state["charging_state"] = actual_charging_state
                     self._local_tesla_state["current_amps"] = actual_amps
                     self._local_tesla_state["last_sync"] = time.time()
-                    
+
                     logger.info(f"📊 Tesla actual state: {actual_charging_state} at {actual_amps}A")
                 else:
                     # Fallback to cached if sync fails
@@ -208,7 +238,9 @@ class TeslaChargingController:
 
                 # Now decide based on ACTUAL current state
                 if actual_charging_state in ["Charging", "Starting"]:
-                    logger.info(f"🔄 Tesla is charging ({actual_charging_state} at {actual_amps}A), sending stop command...")
+                    logger.info(
+                        f"🔄 Tesla is charging ({actual_charging_state} at {actual_amps}A), sending stop command..."
+                    )
                     stop_result = await self._stop_charging()
                     if stop_result["success"]:
                         result["actions_taken"].append("Stopped charging")
@@ -218,8 +250,12 @@ class TeslaChargingController:
                         result["errors"].append(stop_result["error"])
                 else:
                     result["success"] = True
-                    result["actions_taken"].append(f"Already not charging (state: {actual_charging_state})")
-                    logger.debug(f"Tesla already not charging (state: {actual_charging_state}), skipping stop command")
+                    result["actions_taken"].append(
+                        f"Already not charging (state: {actual_charging_state})"
+                    )
+                    logger.debug(
+                        f"Tesla already not charging (state: {actual_charging_state}), skipping stop command"
+                    )
             else:
                 result["errors"].append(
                     "Use execute_charging_control_with_wake for starting charging"
@@ -508,7 +544,7 @@ class TeslaChargingController:
         if vehicle_data:
             self._local_tesla_state.update(
                 {
-                    "soc": vehicle_data.battery_level,
+                    "ev_soc": vehicle_data.battery_level,
                     "charging_state": vehicle_data.charging_state,
                     "current_amps": getattr(vehicle_data, "charge_amps", None),
                     "last_sync": time.time(),

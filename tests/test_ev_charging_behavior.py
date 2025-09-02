@@ -19,8 +19,8 @@ class TestEVChargingBehaviors:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
-                "hurry": {"target_soc": 90.0},
+                "eco": {"target_home_battery_soc": 98.5},
+                "hurry": {"target_home_battery_soc": 90.0},
                 "battery_charging_threshold": 100,
                 "adjustment_interval": 0,  # No rate limiting for tests
                 "measurement_interval": 0,
@@ -43,9 +43,9 @@ class TestEVChargingBehaviors:
             (98.4, "Should stop at 98.4% SOC"),
         ]
 
-        for soc, description in test_cases:
+        for home_battery_soc, description in test_cases:
             metrics = EnergyMetrics(
-                battery_soc=soc,
+                battery_soc=home_battery_soc,
                 battery_power=100,  # Charging
                 solar_power=3000,
                 grid_power_flow=-1000,  # Exporting
@@ -54,7 +54,7 @@ class TestEVChargingBehaviors:
             recommended_amps = policy.calculate_target_amps(current_amps, metrics)
             assert recommended_amps == 0, f"{description}: Expected 0A but got {recommended_amps}A"
 
-    def test_eco_charges_max_amps_at_high_soc(self, config):
+    def test_eco_charges_max_amps_at_high_home_battery_soc(self, config):
         """ECO policy MUST charge at max amps when home battery SOC >= 99%."""
         policy = create_policy("eco", config["ev_charging"])
         max_amps = config["ev_charging"]["max_amps"]
@@ -67,9 +67,9 @@ class TestEVChargingBehaviors:
             (100.0, "Should max charge at 100% SOC"),
         ]
 
-        for soc, description in test_cases:
+        for home_battery_soc, description in test_cases:
             metrics = EnergyMetrics(
-                battery_soc=soc,
+                battery_soc=home_battery_soc,
                 battery_power=-100,  # Discharging (doesn't matter at this SOC)
                 solar_power=3000,
                 grid_power_flow=-1000,
@@ -85,12 +85,12 @@ class TestEVChargingBehaviors:
         policy = create_policy("eco", config["ev_charging"])
 
         # Battery SOC in feedback zone (98.5% - 99%)
-        base_soc = 98.7
+        base_home_battery_soc = 98.7
 
         # Test increase on battery charging (power > 100W)
         current_amps = 10
         metrics = EnergyMetrics(
-            battery_soc=base_soc,
+            battery_soc=base_home_battery_soc,
             battery_power=200,  # Charging
             solar_power=3000,
             grid_power_flow=-500,
@@ -103,7 +103,7 @@ class TestEVChargingBehaviors:
         # Test decrease on battery discharging (power < -100W)
         current_amps = 10
         metrics = EnergyMetrics(
-            battery_soc=base_soc,
+            battery_soc=base_home_battery_soc,
             battery_power=-200,  # Discharging
             solar_power=3000,
             grid_power_flow=-500,
@@ -116,7 +116,7 @@ class TestEVChargingBehaviors:
         # Test maintain when battery flat (-100W to 100W)
         current_amps = 10
         metrics = EnergyMetrics(
-            battery_soc=base_soc,
+            battery_soc=base_home_battery_soc,
             battery_power=50,  # Within threshold
             solar_power=3000,
             grid_power_flow=-500,
@@ -227,7 +227,7 @@ class TestEVChargingIntegration:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
+                "eco": {"target_home_battery_soc": 98.5},
                 "adjustment_interval": 0,
                 "measurement_interval": 0,
             },
@@ -242,11 +242,11 @@ class TestEVChargingIntegration:
         charge_stopped = False
 
         for record in data:
-            soc = float(record["home_batt_soc_percent"])
+            home_battery_soc = float(record["home_batt_soc_percent"])
             battery_power = int(record["home_batt_power_w"]) if record["home_batt_power_w"] else 0
 
             metrics = EnergyMetrics(
-                battery_soc=soc,
+                battery_soc=home_battery_soc,
                 battery_power=battery_power,
                 solar_power=int(record["solar_power_w"]) if record["solar_power_w"] else 0,
                 grid_power_flow=int(record["grid_power_flow_w"])
@@ -257,15 +257,15 @@ class TestEVChargingIntegration:
             recommended = policy.calculate_target_amps(current_amps, metrics)
 
             # Check behavior at key thresholds
-            if soc >= 99.0 and not charge_started:
+            if home_battery_soc >= 99.0 and not charge_started:
                 assert recommended == 20, (
-                    f"Should charge at max 20A when SOC={soc:.1f}%, got {recommended}A"
+                    f"Should charge at max 20A when SOC={home_battery_soc:.1f}%, got {recommended}A"
                 )
                 charge_started = True
 
-            if soc < 98.5:
+            if home_battery_soc < 98.5:
                 assert recommended == 0, (
-                    f"Should stop charging when SOC={soc:.1f}% < 98.5%, got {recommended}A"
+                    f"Should stop charging when SOC={home_battery_soc:.1f}% < 98.5%, got {recommended}A"
                 )
                 charge_stopped = True
 
@@ -288,7 +288,7 @@ class TestEVChargingIntegration:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
+                "eco": {"target_home_battery_soc": 98.5},
                 "battery_charging_threshold": 100,
                 "adjustment_interval": 0,
                 "measurement_interval": 0,
@@ -304,15 +304,15 @@ class TestEVChargingIntegration:
         feedback_decreases = 0
 
         for record in data:
-            soc = float(record["home_batt_soc_percent"])
+            home_battery_soc = float(record["home_batt_soc_percent"])
             battery_power = int(record["home_batt_power_w"]) if record["home_batt_power_w"] else 0
 
             # Only test in feedback zone
-            if 98.5 <= soc < 99.0:
+            if 98.5 <= home_battery_soc < 99.0:
                 prev_amps = current_amps
 
                 metrics = EnergyMetrics(
-                    battery_soc=soc,
+                    battery_soc=home_battery_soc,
                     battery_power=battery_power,
                     solar_power=int(record["solar_power_w"]) if record["solar_power_w"] else 0,
                     grid_power_flow=int(record["grid_power_flow_w"])
@@ -358,7 +358,7 @@ class TestEVChargingIntegration:
         """
         # Generate mixed scenario data
         data = synthesizer.synthesize_metrics(
-            duration_hours=0.5, scenario="moderate_midday_solar_70pct_soc"
+            duration_hours=0.5, scenario="moderate_midday_solar_70pct_home_battery_soc"
         )
 
         # Create temporary CSV file
@@ -377,7 +377,7 @@ class TestEVChargingIntegration:
                 "ev_charging": {
                     "enabled": True,
                     "max_amps": 20,
-                    "eco": {"target_soc": 98.5},
+                    "eco": {"target_home_battery_soc": 98.5},
                     "adjustment_interval": 5,  # 5 seconds for testing
                     "measurement_interval": 1,
                 },
@@ -396,13 +396,13 @@ class TestEVChargingIntegration:
                 # Simulate time passing (1 minute per record)
                 current_time = i * 60
 
-                soc = float(record["home_batt_soc_percent"])
+                home_battery_soc = float(record["home_batt_soc_percent"])
                 battery_power = (
                     int(record["home_batt_power_w"]) if record["home_batt_power_w"] else 0
                 )
 
                 metrics = EnergyMetrics(
-                    battery_soc=soc,
+                    battery_soc=home_battery_soc,
                     battery_power=battery_power,
                     solar_power=int(record["solar_power_w"]) if record["solar_power_w"] else 0,
                     grid_power_flow=int(record["grid_power_flow_w"])
@@ -466,15 +466,23 @@ class TestEVChargingIntegration:
         random.seed(42)  # Ensure deterministic synthetic data
         # Create a scenario that will show policy differences
         base_data = synthesizer.synthesize_metrics(
-            duration_hours=0.25, scenario="moderate_midday_solar_70pct_soc"
+            duration_hours=0.25, scenario="moderate_midday_solar_70pct_home_battery_soc"
         )
 
         # Modify the SOC values to test different policy thresholds
         data = []
-        soc_values = [96.0, 97.0, 98.0, 98.6, 99.0, 98.4, 97.5]  # Mix of values around thresholds
-        for i, record in enumerate(base_data[: len(soc_values)]):
+        home_battery_soc_values = [
+            96.0,
+            97.0,
+            98.0,
+            98.6,
+            99.0,
+            98.4,
+            97.5,
+        ]  # Mix of values around thresholds
+        for i, record in enumerate(base_data[: len(home_battery_soc_values)]):
             record = record.copy()
-            record["home_batt_soc_percent"] = str(soc_values[i])
+            record["home_batt_soc_percent"] = str(home_battery_soc_values[i])
             data.append(record)
 
         eco_decisions = []
@@ -485,8 +493,8 @@ class TestEVChargingIntegration:
                 "ev_charging": {
                     "enabled": True,
                     "max_amps": 20,
-                    "eco": {"target_soc": 98.5},
-                    "hurry": {"target_soc": 90.0},
+                    "eco": {"target_home_battery_soc": 98.5},
+                    "hurry": {"target_home_battery_soc": 90.0},
                     "adjustment_interval": 0,
                     "measurement_interval": 0,
                 },
@@ -498,13 +506,13 @@ class TestEVChargingIntegration:
             current_amps = 0
 
             for record in data:
-                soc = float(record["home_batt_soc_percent"])
+                home_battery_soc = float(record["home_batt_soc_percent"])
                 battery_power = (
                     int(record["home_batt_power_w"]) if record["home_batt_power_w"] else 0
                 )
 
                 metrics = EnergyMetrics(
-                    battery_soc=soc,
+                    battery_soc=home_battery_soc,
                     battery_power=battery_power,
                     solar_power=int(record["solar_power_w"]) if record["solar_power_w"] else 0,
                     grid_power_flow=int(record["grid_power_flow_w"])
@@ -513,7 +521,7 @@ class TestEVChargingIntegration:
                 )
 
                 recommended = policy.calculate_target_amps(current_amps, metrics)
-                decisions_list.append((soc, recommended))
+                decisions_list.append((home_battery_soc, recommended))
                 current_amps = recommended
 
         # Verify policies behave differently
@@ -523,7 +531,7 @@ class TestEVChargingIntegration:
         # They should produce different charging patterns due to different thresholds
         different_decisions = sum(
             1
-            for (eco_soc, eco_amps), (hurry_soc, hurry_amps) in zip(
+            for (eco_home_battery_soc, eco_amps), (hurry_home_battery_soc, hurry_amps) in zip(
                 eco_decisions, hurry_decisions, strict=False
             )
             if eco_amps != hurry_amps
@@ -552,8 +560,8 @@ class TestPolicyComparison:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
-                "hurry": {"target_soc": 90.0},
+                "eco": {"target_home_battery_soc": 98.5},
+                "hurry": {"target_home_battery_soc": 90.0},
                 "adjustment_interval": 0,
                 "measurement_interval": 0,
             },
@@ -592,8 +600,8 @@ class TestPolicySpecCompliance:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
-                "hurry": {"target_soc": 90.0},
+                "eco": {"target_home_battery_soc": 98.5},
+                "hurry": {"target_home_battery_soc": 90.0},
                 "adjustment_interval": 0,
                 "measurement_interval": 0,
             },
@@ -658,9 +666,12 @@ class TestPolicySpecCompliance:
             ("Full SOC", 100.0),
         ]
 
-        for description, soc in test_cases:
+        for description, home_battery_soc in test_cases:
             metrics = EnergyMetrics(
-                battery_soc=soc, battery_power=-500, solar_power=0, grid_power_flow=2000
+                battery_soc=home_battery_soc,
+                battery_power=-500,
+                solar_power=0,
+                grid_power_flow=2000,
             )
             recommended = policy.calculate_target_amps(0, metrics)
             assert recommended == 20, (
@@ -674,12 +685,15 @@ class TestPolicySpecCompliance:
 
             # Set up scenario where policy wants to reduce from 6A
             if policy_name == "eco":
-                soc = 98.7  # In feedback zone
+                home_battery_soc = 98.7  # In feedback zone
             else:
-                soc = 90.5  # In feedback zone
+                home_battery_soc = 90.5  # In feedback zone
 
             metrics = EnergyMetrics(
-                battery_soc=soc, battery_power=-300, solar_power=1000, grid_power_flow=500
+                battery_soc=home_battery_soc,
+                battery_power=-300,
+                solar_power=1000,
+                grid_power_flow=500,
             )
 
             # At 6A, should stop instead of going to 5A
@@ -708,7 +722,7 @@ class TestSolarExportBehavior:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
+                "eco": {"target_home_battery_soc": 98.5},
                 "adjustment_interval": 0,
             },
             "tesla": {"enabled": False},
@@ -743,7 +757,7 @@ class TestSolarExportBehavior:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "hurry": {"target_soc": 90.0},
+                "hurry": {"target_home_battery_soc": 90.0},
                 "adjustment_interval": 0,
             },
             "tesla": {"enabled": False},
@@ -797,14 +811,14 @@ class TestSolarExportBehavior:
         )
         assert policy.calculate_target_amps(10, metrics_import) == 20
 
-    def test_policies_stop_on_grid_import_low_soc(self):
+    def test_policies_stop_on_grid_import_low_home_battery_soc(self):
         """All policies (except Emergency) should stop when importing and SOC below threshold."""
         config = {
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
-                "hurry": {"target_soc": 90.0},
+                "eco": {"target_home_battery_soc": 98.5},
+                "hurry": {"target_home_battery_soc": 90.0},
                 "adjustment_interval": 0,
             },
             "tesla": {"enabled": False},
@@ -854,23 +868,23 @@ class TestEnergyFlowEffects:
         grid_import_moments = []
 
         for i, timestep in enumerate(simulation_data):
-            home_soc = timestep.get("home_soc", 0)
+            home_battery_soc = timestep.get("home_battery_soc", 0)
             ev_charging_power = timestep.get("ev_charging_power", 0)
             house_load = timestep.get("house_load", 2000)  # Estimate if not provided
             solar_power = timestep.get("solar_power", 0)
 
             # Condition 1: HomeSOC ≤ reserve SOC
-            home_soc_at_reserve = home_soc <= home_battery_reserve_soc
+            home_battery_soc_at_reserve = home_battery_soc <= home_battery_reserve_soc
 
             # Condition 2: total load ≥ solar
             total_load = ev_charging_power + house_load
             load_exceeds_solar = total_load >= solar_power
 
-            if home_soc_at_reserve and load_exceeds_solar:
+            if home_battery_soc_at_reserve and load_exceeds_solar:
                 grid_import_moments.append(
                     {
                         "timestep": i,
-                        "home_soc": home_soc,
+                        "home_battery_soc": home_battery_soc,
                         "total_load": total_load,
                         "solar_power": solar_power,
                         "deficit": total_load - solar_power,
@@ -890,7 +904,7 @@ class TestEnergyFlowEffects:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
+                "eco": {"target_home_battery_soc": 98.5},
                 "adjustment_interval": 0,  # No rate limiting for energy flow test
             },
             "tesla": {"enabled": False},
@@ -902,16 +916,16 @@ class TestEnergyFlowEffects:
         policy = create_policy("eco", config["ev_charging"])
         simulation_data = []
         current_amps = 0
-        home_soc_values = []
+        home_battery_soc_values = []
         ev_energy_delivered = 0
 
         for record in data:
-            home_soc = float(record["home_batt_soc_percent"])
+            home_battery_soc = float(record["home_batt_soc_percent"])
             solar_power = int(record["solar_power_w"]) if record["solar_power_w"] else 0
             house_load = 2000  # Realistic house load estimate
 
             metrics = EnergyMetrics(
-                battery_soc=home_soc,
+                battery_soc=home_battery_soc,
                 battery_power=int(record["home_batt_power_w"])
                 if record["home_batt_power_w"]
                 else 0,
@@ -926,14 +940,14 @@ class TestEnergyFlowEffects:
             ev_energy_delivered += ev_charging_power / 1000 / 60  # kWh (power/1000/60min)
 
             timestep = {
-                "home_soc": home_soc,
+                "home_battery_soc": home_battery_soc,
                 "ev_charging_power": ev_charging_power,
                 "house_load": house_load,
                 "solar_power": solar_power,
                 "current_amps": current_amps,
             }
             simulation_data.append(timestep)
-            home_soc_values.append(home_soc)
+            home_battery_soc_values.append(home_battery_soc)
 
         # Test grid import prevention
         home_battery_reserve = config["home_battery"]["target_soc_percent"]
@@ -945,13 +959,15 @@ class TestEnergyFlowEffects:
         )
 
         # Verify ECO stayed well above reserve level (the key for grid import prevention)
-        min_soc = min(home_soc_values)
-        assert min_soc >= home_battery_reserve + 50, (
-            f"ECO allowed HomeSOC to drop to {min_soc:.1f}%, too close to {home_battery_reserve}% reserve"
+        min_home_battery_soc = min(home_battery_soc_values)
+        assert min_home_battery_soc >= home_battery_reserve + 50, (
+            f"ECO allowed HomeSOC to drop to {min_home_battery_soc:.1f}%, too close to {home_battery_reserve}% reserve"
         )
 
         print(f"✅ ECO delivered {ev_energy_delivered:.2f} kWh to EV with zero grid import moments")
-        print(f"✅ HomeSOC range: {min(home_soc_values):.1f}% - {max(home_soc_values):.1f}%")
+        print(
+            f"✅ HomeSOC range: {min(home_battery_soc_values):.1f}% - {max(home_battery_soc_values):.1f}%"
+        )
 
     @pytest.mark.asyncio
     async def test_hurry_prevents_grid_import_with_lower_buffer(self, synthesizer):
@@ -964,7 +980,7 @@ class TestEnergyFlowEffects:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "hurry": {"target_soc": 90.0},
+                "hurry": {"target_home_battery_soc": 90.0},
                 "adjustment_interval": 0,
             },
             "tesla": {"enabled": False},
@@ -976,16 +992,16 @@ class TestEnergyFlowEffects:
         policy = create_policy("hurry", config["ev_charging"])
         simulation_data = []
         current_amps = 0
-        home_soc_values = []
+        home_battery_soc_values = []
         ev_energy_delivered = 0
 
         for record in data:
-            home_soc = float(record["home_batt_soc_percent"])
+            home_battery_soc = float(record["home_batt_soc_percent"])
             solar_power = int(record["solar_power_w"]) if record["solar_power_w"] else 0
             house_load = 2000
 
             metrics = EnergyMetrics(
-                battery_soc=home_soc,
+                battery_soc=home_battery_soc,
                 battery_power=int(record["home_batt_power_w"])
                 if record["home_batt_power_w"]
                 else 0,
@@ -1000,14 +1016,14 @@ class TestEnergyFlowEffects:
             ev_energy_delivered += ev_charging_power / 1000 / 60
 
             timestep = {
-                "home_soc": home_soc,
+                "home_battery_soc": home_battery_soc,
                 "ev_charging_power": ev_charging_power,
                 "house_load": house_load,
                 "solar_power": solar_power,
                 "current_amps": current_amps,
             }
             simulation_data.append(timestep)
-            home_soc_values.append(home_soc)
+            home_battery_soc_values.append(home_battery_soc)
 
         # Test grid import prevention
         home_battery_reserve = config["home_battery"]["target_soc_percent"]
@@ -1019,21 +1035,23 @@ class TestEnergyFlowEffects:
         )
 
         # Verify HURRY stayed well above reserve level (the key for grid import prevention)
-        min_soc = min(home_soc_values)
-        assert min_soc >= home_battery_reserve + 30, (
-            f"HURRY allowed HomeSOC to drop to {min_soc:.1f}%, too close to {home_battery_reserve}% reserve"
+        min_home_battery_soc = min(home_battery_soc_values)
+        assert min_home_battery_soc >= home_battery_reserve + 30, (
+            f"HURRY allowed HomeSOC to drop to {min_home_battery_soc:.1f}%, too close to {home_battery_reserve}% reserve"
         )
 
         print(
             f"✅ HURRY delivered {ev_energy_delivered:.2f} kWh to EV with zero grid import moments"
         )
-        print(f"✅ HomeSOC range: {min(home_soc_values):.1f}% - {max(home_soc_values):.1f}%")
+        print(
+            f"✅ HomeSOC range: {min(home_battery_soc_values):.1f}% - {max(home_battery_soc_values):.1f}%"
+        )
 
     @pytest.mark.asyncio
     async def test_emergency_causes_expected_grid_import(self, synthesizer):
         """EMERGENCY should maximize EV charging even if it causes grid import."""
         data = synthesizer.synthesize_metrics(
-            duration_hours=2.0, scenario="variable_conditions_98pct_soc"
+            duration_hours=2.0, scenario="variable_conditions_98pct_home_battery_soc"
         )
 
         config = {
@@ -1051,17 +1069,17 @@ class TestEnergyFlowEffects:
         policy = create_policy("emergency", config["ev_charging"])
         simulation_data = []
         current_amps = 0
-        home_soc_values = []
+        home_battery_soc_values = []
         ev_energy_delivered = 0
         charging_amps_history = []
 
         for record in data:
-            home_soc = float(record["home_batt_soc_percent"])
+            home_battery_soc = float(record["home_batt_soc_percent"])
             solar_power = int(record["solar_power_w"]) if record["solar_power_w"] else 0
             house_load = 2000
 
             metrics = EnergyMetrics(
-                battery_soc=home_soc,
+                battery_soc=home_battery_soc,
                 battery_power=int(record["home_batt_power_w"])
                 if record["home_batt_power_w"]
                 else 0,
@@ -1076,14 +1094,14 @@ class TestEnergyFlowEffects:
             ev_energy_delivered += ev_charging_power / 1000 / 60
 
             timestep = {
-                "home_soc": home_soc,
+                "home_battery_soc": home_battery_soc,
                 "ev_charging_power": ev_charging_power,
                 "house_load": house_load,
                 "solar_power": solar_power,
                 "current_amps": current_amps,
             }
             simulation_data.append(timestep)
-            home_soc_values.append(home_soc)
+            home_battery_soc_values.append(home_battery_soc)
             charging_amps_history.append(current_amps)
 
         # Test that EMERGENCY charges at max consistently
@@ -1097,13 +1115,15 @@ class TestEnergyFlowEffects:
         grid_imports = self.detect_grid_import_moments(simulation_data, home_battery_reserve)
 
         print(f"✅ EMERGENCY delivered {ev_energy_delivered:.2f} kWh to EV at maximum rate")
-        print(f"✅ HomeSOC range: {min(home_soc_values):.1f}% - {max(home_soc_values):.1f}%")
+        print(
+            f"✅ HomeSOC range: {min(home_battery_soc_values):.1f}% - {max(home_battery_soc_values):.1f}%"
+        )
         print(f"✅ Grid import moments: {len(grid_imports)} (expected for EMERGENCY mode)")
 
         # EMERGENCY should drain battery significantly for maximum EV charging
-        if len(home_soc_values) > 0:
-            soc_drop = max(home_soc_values) - min(home_soc_values)
-            print(f"✅ Battery SOC dropped {soc_drop:.1f}% for maximum EV charging")
+        if len(home_battery_soc_values) > 0:
+            home_battery_soc_drop = max(home_battery_soc_values) - min(home_battery_soc_values)
+            print(f"✅ Battery SOC dropped {home_battery_soc_drop:.1f}% for maximum EV charging")
 
 
 class TestDailyCycleBacktesting:
@@ -1127,7 +1147,7 @@ class TestDailyCycleBacktesting:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
+                "eco": {"target_home_battery_soc": 98.5},
                 "adjustment_interval": 30,
             },
             "tesla": {"enabled": False},
@@ -1164,7 +1184,7 @@ class TestDailyCycleBacktesting:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
+                "eco": {"target_home_battery_soc": 98.5},
                 "adjustment_interval": 0,  # No rate limiting for test
             },
             "tesla": {"enabled": False},
@@ -1211,7 +1231,7 @@ class TestDailyCycleBacktesting:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "hurry": {"target_soc": 90.0},
+                "hurry": {"target_home_battery_soc": 90.0},
                 "adjustment_interval": 0,
             },
             "tesla": {"enabled": False},
@@ -1279,8 +1299,8 @@ class TestDailyCycleBacktesting:
             "ev_charging": {
                 "enabled": True,
                 "max_amps": 20,
-                "eco": {"target_soc": 98.5},
-                "hurry": {"target_soc": 90.0},
+                "eco": {"target_home_battery_soc": 98.5},
+                "hurry": {"target_home_battery_soc": 90.0},
                 "adjustment_interval": 0,
             },
             "tesla": {"enabled": False},
@@ -1294,18 +1314,18 @@ class TestDailyCycleBacktesting:
             for i, record in enumerate(data):
                 # Set SOC above thresholds
                 if policy_name == "eco":
-                    soc = 99.0
+                    home_battery_soc = 99.0
                 elif policy_name == "hurry":
-                    soc = 91.0
+                    home_battery_soc = 91.0
                 else:
-                    soc = 95.0
+                    home_battery_soc = 95.0
 
                 # Simulate decreasing export as solar ramps down
                 solar_power = max(0, 6000 - (i * 100))  # Decreasing solar
                 battery_power = max(-500, 500 - (i * 20))  # Decreasing battery charge rate
 
                 metrics = EnergyMetrics(
-                    battery_soc=soc,
+                    battery_soc=home_battery_soc,
                     battery_power=battery_power,
                     solar_power=solar_power,
                     grid_power_flow=-solar_power + 2000,  # Less export as solar decreases

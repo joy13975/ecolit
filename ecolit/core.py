@@ -63,7 +63,7 @@ class EcoliteManager:
 
         # Tesla state cache for display (synced every 10 minutes to reduce API calls)
         self._cached_tesla_state = {
-            "soc": None,
+            "ev_soc": None,
             "charging_state": None,
             "range": None,
             "est_range": None,
@@ -119,7 +119,7 @@ class EcoliteManager:
 
                             self._cached_tesla_state.update(
                                 {
-                                    "soc": vehicle_data.battery_level,
+                                    "ev_soc": vehicle_data.battery_level,
                                     "charging_state": vehicle_data.charging_state,
                                     "range": vehicle_data.battery_range,
                                     "est_range": vehicle_data.est_battery_range,
@@ -531,10 +531,13 @@ class EcoliteManager:
             # Update Wall Connector data (free local API)
             await self._update_wall_connector_data()
 
-
             # Store latest home data for Tesla polling and EV control
             # Preserve existing target_amps from previous cycle
-            existing_target_amps = self._latest_home_data.get("target_amps") if hasattr(self, '_latest_home_data') and self._latest_home_data else None
+            existing_target_amps = (
+                self._latest_home_data.get("target_amps")
+                if hasattr(self, "_latest_home_data") and self._latest_home_data
+                else None
+            )
 
             self._latest_home_data = {
                 "battery_soc": battery_soc,
@@ -778,7 +781,7 @@ class EcoliteManager:
     async def _maybe_log_tesla_metrics(self, current_time: float, ev_amps: int):
         """Log Tesla metrics only when we have fresh data."""
         # Get cached Tesla data for display
-        tesla_car_soc = self._cached_tesla_state.get("soc")
+        tesla_car_ev_soc = self._cached_tesla_state.get("ev_soc")
         tesla_car_charging_state = self._cached_tesla_state.get("charging_state")
         tesla_car_range = self._cached_tesla_state.get("range")
         tesla_car_est_range = self._cached_tesla_state.get("est_range")
@@ -796,7 +799,7 @@ class EcoliteManager:
 
         if tesla_data_age < 1800 or wall_connector_amps > 0:
             self._log_tesla_metrics(
-                tesla_car_soc,
+                tesla_car_ev_soc,
                 tesla_car_charging_state,
                 tesla_car_range,
                 tesla_car_est_range,
@@ -810,7 +813,7 @@ class EcoliteManager:
                 home_data = self._latest_home_data
                 self._log_csv_metrics(
                     home_data,
-                    tesla_car_soc,
+                    tesla_car_ev_soc,
                     tesla_car_charging_power,
                     tesla_car_charging_state,
                     tesla_car_range,
@@ -822,7 +825,7 @@ class EcoliteManager:
 
     def _log_tesla_metrics(
         self,
-        tesla_car_soc,
+        tesla_car_ev_soc,
         tesla_car_charging_state,
         tesla_car_range,
         tesla_car_est_range,
@@ -834,8 +837,8 @@ class EcoliteManager:
         tesla_stats = []
 
         # Tesla car SOC and range
-        if tesla_car_soc is not None:
-            soc_str = f"SOC:{tesla_car_soc}%"
+        if tesla_car_ev_soc is not None:
+            soc_str = f"SOC:{tesla_car_ev_soc}%"
             # Add range if available
             if tesla_car_range is not None:
                 soc_str += f"/{tesla_car_range:.0f}km"
@@ -887,7 +890,7 @@ class EcoliteManager:
     def _log_csv_metrics(
         self,
         home_data,
-        tesla_car_soc,
+        tesla_car_ev_soc,
         tesla_car_charging_power,
         tesla_car_charging_state,
         tesla_car_range,
@@ -912,7 +915,7 @@ class EcoliteManager:
 
         # Prepare Tesla data for logging
         tesla_data = {
-            "ev_soc": tesla_car_soc,
+            "ev_soc": tesla_car_ev_soc,
             "ev_charging_power": tesla_car_charging_power,
             "ev_charging_state": tesla_car_charging_state,
             "ev_range_km": tesla_car_range,
@@ -992,7 +995,7 @@ class EcoliteManager:
         if (
             not force
             and time_since_last < self._tesla_display_sync_interval
-            and self._cached_tesla_state["soc"] is not None
+            and self._cached_tesla_state["ev_soc"] is not None
         ):
             return
 
@@ -1002,7 +1005,7 @@ class EcoliteManager:
             if tesla_vehicle_data and tesla_vehicle_data.timestamp:
                 self._cached_tesla_state.update(
                     {
-                        "soc": tesla_vehicle_data.battery_level,
+                        "ev_soc": tesla_vehicle_data.battery_level,
                         "charging_state": tesla_vehicle_data.charging_state,
                         "range": tesla_vehicle_data.battery_range,
                         "est_range": tesla_vehicle_data.est_battery_range,
