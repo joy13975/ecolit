@@ -70,14 +70,10 @@ format:
 	uv run ruff check --fix .
 
 run:
-	uv run python -m ecolit $(filter-out $@,$(MAKECMDGOALS))
+	uv run python -m ecolit
 
 run-dry:
 	uv run python -m ecolit --dry
-
-# Catch-all for arguments passed to run
-%:
-	@:
 
 scan:
 	uv run python scan.py
