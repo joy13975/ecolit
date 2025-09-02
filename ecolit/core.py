@@ -411,18 +411,20 @@ class EcoliteManager:
         while self._running:
             try:
                 # Wait for either timer or immediate trigger
+                triggered_by_decision = False
                 try:
                     await asyncio.wait_for(
                         self._tesla_poll_trigger.wait(), timeout=tesla_retry_interval
                     )
                     # Trigger was set - clear it and poll immediately
                     self._tesla_poll_trigger.clear()
+                    triggered_by_decision = True
                     logger.info("🚀 Tesla polling triggered by EV decision change")
                 except TimeoutError:
                     # Normal timeout - continue to next poll
-                    logger.debug("Tesla polling: periodic check")
+                    logger.debug("🔄 Tesla polling: periodic 10-minute check")
 
-                await self._poll_tesla_data()
+                await self._poll_tesla_data(triggered_by_decision)
 
             except asyncio.CancelledError:
                 break
@@ -533,7 +535,7 @@ class EcoliteManager:
             # Store latest home data for Tesla polling and EV control
             # Preserve existing target_amps from previous cycle
             existing_target_amps = self._latest_home_data.get("target_amps") if hasattr(self, '_latest_home_data') and self._latest_home_data else None
-            
+
             self._latest_home_data = {
                 "battery_soc": battery_soc,
                 "battery_power": battery_power,
@@ -543,7 +545,7 @@ class EcoliteManager:
                 "battery_data": battery_data,
                 "timestamp": current_time,
             }
-            
+
             # Restore preserved target_amps
             if existing_target_amps is not None:
                 self._latest_home_data["target_amps"] = existing_target_amps
@@ -665,7 +667,7 @@ class EcoliteManager:
             estimates_section = "Home Estimates [" + " ".join(estimates) + "]"
             logger.info(f"📈 {estimates_section}")
 
-    async def _poll_tesla_data(self) -> None:
+    async def _poll_tesla_data(self, triggered_by_decision: bool = False) -> None:
         """Tesla polling - executes current EV controller decision."""
         logger.debug("🔄 Tesla polling started")
 
@@ -683,55 +685,57 @@ class EcoliteManager:
             battery_soc = home_data.get("battery_soc")
             solar_power = home_data.get("solar_power")
 
-            # Get the EV controller's current decision (calculated in home polling loop)
-            ev_amps = home_data.get("target_amps", 0)
-            logger.debug(f"Tesla executing EV decision: {ev_amps}A")
+            # Only execute Tesla control commands when triggered by EV decision changes
+            if triggered_by_decision:
+                # Get the EV controller's current decision (calculated in home polling loop)
+                ev_amps = home_data.get("target_amps", 0)
+                logger.debug(f"Tesla executing EV decision: {ev_amps}A")
 
-            if ev_amps > 0:
-                # We want to charge - execute Tesla control
-                if not self.dry_run and self.tesla_controller:
-                    try:
-                        policy_name = self.ev_controller.get_current_policy()
-                        # Use wake version for starting charging
-                        control_result = (
-                            await self.tesla_controller.execute_charging_control_with_wake(
-                                ev_amps, battery_soc, solar_power, policy_name
+                if ev_amps > 0:
+                    # We want to charge - execute Tesla control
+                    if not self.dry_run and self.tesla_controller:
+                        try:
+                            policy_name = self.ev_controller.get_current_policy()
+                            # Use wake version for starting charging
+                            control_result = (
+                                await self.tesla_controller.execute_charging_control_with_wake(
+                                    ev_amps, battery_soc, solar_power, policy_name
+                                )
                             )
-                        )
 
-                        # Log control actions taken
-                        if control_result["actions_taken"]:
-                            for action in control_result["actions_taken"]:
-                                logger.info(f"🔋 TESLA CONTROL: {action}")
+                            # Log control actions taken
+                            if control_result["actions_taken"]:
+                                for action in control_result["actions_taken"]:
+                                    logger.info(f"🔋 TESLA CONTROL: {action}")
 
-                        # Log warnings
-                        if control_result["warnings"]:
-                            for warning in control_result["warnings"]:
-                                logger.warning(f"⚠️  TESLA CONTROL: {warning}")
+                            # Log warnings
+                            if control_result["warnings"]:
+                                for warning in control_result["warnings"]:
+                                    logger.warning(f"⚠️  TESLA CONTROL: {warning}")
 
-                        # Log errors
-                        if control_result["errors"]:
-                            for error in control_result["errors"]:
-                                logger.error(f"❌ TESLA CONTROL: {error}")
+                            # Log errors
+                            if control_result["errors"]:
+                                for error in control_result["errors"]:
+                                    logger.error(f"❌ TESLA CONTROL: {error}")
 
-                    except Exception as e:
-                        logger.error(f"Error in Tesla charging control: {e}")
-                elif self.dry_run:
-                    logger.info(f"DRY-RUN: Would execute Tesla charging at {ev_amps}A")
-            else:
-                # Stop charging if needed
-                if self.tesla_controller and not self.dry_run:
-                    try:
-                        policy_name = self.ev_controller.get_current_policy()
-                        # Use no-wake version for stopping charging
-                        control_result = await self.tesla_controller.execute_charging_control(
-                            0, battery_soc, solar_power, policy_name
-                        )
-                        if control_result["actions_taken"]:
-                            for action in control_result["actions_taken"]:
-                                logger.info(f"🔋 TESLA CONTROL: {action}")
-                    except Exception as e:
-                        logger.error(f"Error stopping Tesla charging: {e}")
+                        except Exception as e:
+                            logger.error(f"Error in Tesla charging control: {e}")
+                    elif self.dry_run:
+                        logger.info(f"DRY-RUN: Would execute Tesla charging at {ev_amps}A")
+                else:
+                    # Stop charging if needed
+                    if self.tesla_controller and not self.dry_run:
+                        try:
+                            policy_name = self.ev_controller.get_current_policy()
+                            # Use no-wake version for stopping charging
+                            control_result = await self.tesla_controller.execute_charging_control(
+                                0, battery_soc, solar_power, policy_name
+                            )
+                            if control_result["actions_taken"]:
+                                for action in control_result["actions_taken"]:
+                                    logger.info(f"🔋 TESLA CONTROL: {action}")
+                        except Exception as e:
+                            logger.error(f"Error stopping Tesla charging: {e}")
 
             # Update wall connector data for real-time monitoring
             await self._update_wall_connector_data()

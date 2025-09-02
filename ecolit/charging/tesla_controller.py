@@ -188,8 +188,6 @@ class TeslaChargingController:
         try:
             # For stopping charging, sync state first to verify if command is needed
             if target_amps == 0:
-                logger.info("🔄 Syncing Tesla state before stop decision...")
-                
                 # Get fresh state to verify if we actually need to stop
                 vehicle_data = await self.tesla_client.get_vehicle_data()
                 
@@ -210,7 +208,7 @@ class TeslaChargingController:
 
                 # Now decide based on ACTUAL current state
                 if actual_charging_state in ["Charging", "Starting"]:
-                    logger.info("🛑 Tesla is charging, sending stop command...")
+                    logger.info(f"🔄 Tesla is charging ({actual_charging_state} at {actual_amps}A), sending stop command...")
                     stop_result = await self._stop_charging()
                     if stop_result["success"]:
                         result["actions_taken"].append("Stopped charging")
@@ -221,7 +219,7 @@ class TeslaChargingController:
                 else:
                     result["success"] = True
                     result["actions_taken"].append(f"Already not charging (state: {actual_charging_state})")
-                    logger.info(f"✅ Tesla already not charging (state: {actual_charging_state}), skipping stop command")
+                    logger.debug(f"Tesla already not charging (state: {actual_charging_state}), skipping stop command")
             else:
                 result["errors"].append(
                     "Use execute_charging_control_with_wake for starting charging"
