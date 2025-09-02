@@ -465,12 +465,14 @@ class TestEVChargingIntegration:
 
         random.seed(42)  # Ensure deterministic synthetic data
         # Create a scenario that will show policy differences
-        base_data = synthesizer.synthesize_metrics(duration_hours=0.25, scenario="moderate_midday_solar_70pct_soc")
-        
+        base_data = synthesizer.synthesize_metrics(
+            duration_hours=0.25, scenario="moderate_midday_solar_70pct_soc"
+        )
+
         # Modify the SOC values to test different policy thresholds
         data = []
         soc_values = [96.0, 97.0, 98.0, 98.6, 99.0, 98.4, 97.5]  # Mix of values around thresholds
-        for i, record in enumerate(base_data[:len(soc_values)]):
+        for i, record in enumerate(base_data[: len(soc_values)]):
             record = record.copy()
             record["home_batt_soc_percent"] = str(soc_values[i])
             data.append(record)
@@ -880,7 +882,9 @@ class TestEnergyFlowEffects:
     @pytest.mark.asyncio
     async def test_eco_prevents_grid_import_by_stopping_early(self, synthesizer):
         """ECO should prevent grid import by stopping EV charging at 98.5% HomeSOC."""
-        data = synthesizer.synthesize_metrics(duration_hours=2.0, scenario="sunny_day_eco_test_99pct")
+        data = synthesizer.synthesize_metrics(
+            duration_hours=2.0, scenario="sunny_day_eco_test_99pct"
+        )
 
         config = {
             "ev_charging": {
@@ -952,7 +956,9 @@ class TestEnergyFlowEffects:
     @pytest.mark.asyncio
     async def test_hurry_prevents_grid_import_with_lower_buffer(self, synthesizer):
         """HURRY should prevent grid import while delivering more EV energy than ECO."""
-        data = synthesizer.synthesize_metrics(duration_hours=2.0, scenario="hurry_threshold_test_90pct")
+        data = synthesizer.synthesize_metrics(
+            duration_hours=2.0, scenario="hurry_threshold_test_90pct"
+        )
 
         config = {
             "ev_charging": {

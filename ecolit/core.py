@@ -80,7 +80,7 @@ class EcoliteManager:
         self._last_home_metrics_log = 0
         self._latest_home_data = {}  # Shared data between home and Tesla loops
         self._wall_connector_data = {}  # Wall Connector real-time data
-        
+
         # Tesla polling trigger
         self._tesla_poll_trigger = asyncio.Event()
 
@@ -180,87 +180,102 @@ class EcoliteManager:
             return
 
         logger.info(f"Validating {len(required_devices)} required device(s)...")
-        missing_devices = []
 
-        for device_config in required_devices:
-            device_name = device_config.get("name", "Unknown")
-            ip = device_config.get("ip")
-            eojgc = device_config.get("eojgc")
-            eojcc = device_config.get("eojcc")
-            instance = device_config.get("instance")
+        # Try up to 3 times with delays for device connectivity issues
+        for attempt in range(3):
+            if attempt > 0:
+                logger.warning(f"Retrying device validation (attempt {attempt + 1}/3)...")
+                await asyncio.sleep(5)
 
-            if not all([ip, eojgc is not None, eojcc is not None, instance is not None]):
-                logger.error(f"Invalid device configuration for {device_name}")
-                missing_devices.append(device_name)
-                continue
+            missing_devices = []
 
-            try:
-                # Try to discover this specific device
-                success = await asyncio.wait_for(self.api_client.discover(ip), timeout=10)
+            for device_config in required_devices:
+                device_name = device_config.get("name", "Unknown")
+                ip = device_config.get("ip")
+                eojgc = device_config.get("eojgc")
+                eojcc = device_config.get("eojcc")
+                instance = device_config.get("instance")
 
-                if not success:
-                    logger.error(f"Failed to discover devices at {ip} for {device_name}")
+                if not all([ip, eojgc is not None, eojcc is not None, instance is not None]):
+                    logger.error(f"Invalid device configuration for {device_name}")
                     missing_devices.append(device_name)
                     continue
 
-                # Wait for discovery to complete
-                for _ in range(300):
-                    await asyncio.sleep(0.01)
-                    discovery_state = self.device_state_manager.get_discovery_state(ip)
-                    if discovery_state and "discovered" in discovery_state:
-                        break
+                try:
+                    # Try to discover this specific device
+                    success = await asyncio.wait_for(self.api_client.discover(ip), timeout=10)
 
-                # Check if the specific device exists using DeviceStateManager
-                if self.device_state_manager.device_exists(ip, eojgc, eojcc, instance):
-                    logger.info(f"✅ Required device validated: {device_name}")
+                    if not success:
+                        logger.error(f"Failed to discover devices at {ip} for {device_name}")
+                        missing_devices.append(device_name)
+                        continue
 
-                    # Log available properties for debugging with meaningful names
-                    available_props = self.device_state_manager.get_available_properties(
-                        ip, eojgc, eojcc, instance
-                    )
-                    prop_names = []
-                    for p in available_props:
-                        name = EPC_NAMES.get(p, f"Unknown(0x{p:02X})")
-                        prop_names.append(name)
+                    # Wait for discovery to complete
+                    for _ in range(300):
+                        await asyncio.sleep(0.01)
+                        discovery_state = self.device_state_manager.get_discovery_state(ip)
+                        if discovery_state and "discovered" in discovery_state:
+                            break
 
-                    logger.debug(f"Available properties for {device_name}: {prop_names}")
+                    # Check if the specific device exists using DeviceStateManager
+                    if self.device_state_manager.device_exists(ip, eojgc, eojcc, instance):
+                        logger.info(f"✅ Required device validated: {device_name}")
 
-                    # Store the raw ECHONET instance for direct access
-                    if device_config.get("type") == "solar" and eojcc == 0x79:
-                        self.solar_instance = {
-                            "ip": ip,
-                            "eojgc": eojgc,
-                            "eojcc": eojcc,
-                            "instance": instance,
-                        }
-                        logger.info(f"Stored solar device info for {device_name}")
-                    elif device_config.get("type") == "battery" and eojcc == 0x7D:
-                        self.battery_instance = {
-                            "ip": ip,
-                            "eojgc": eojgc,
-                            "eojcc": eojcc,
-                            "instance": instance,
-                            "name": device_name,
-                            "capacity_kwh": device_config.get("capacity_kwh"),
-                        }
-                        logger.info(f"Stored battery device info for {device_name}")
-                elif self.device_state_manager.is_device_discovered(ip):
-                    logger.error(
-                        f"❌ Required device not found: {device_name} (0x{eojgc:02X}{eojcc:02X}:{instance})"
-                    )
+                        # Log available properties for debugging with meaningful names
+                        available_props = self.device_state_manager.get_available_properties(
+                            ip, eojgc, eojcc, instance
+                        )
+                        prop_names = []
+                        for p in available_props:
+                            name = EPC_NAMES.get(p, f"Unknown(0x{p:02X})")
+                            prop_names.append(name)
+
+                        logger.debug(f"Available properties for {device_name}: {prop_names}")
+
+                        # Store the raw ECHONET instance for direct access
+                        if device_config.get("type") == "solar" and eojcc == 0x79:
+                            self.solar_instance = {
+                                "ip": ip,
+                                "eojgc": eojgc,
+                                "eojcc": eojcc,
+                                "instance": instance,
+                            }
+                            logger.info(f"Stored solar device info for {device_name}")
+                        elif device_config.get("type") == "battery" and eojcc == 0x7D:
+                            self.battery_instance = {
+                                "ip": ip,
+                                "eojgc": eojgc,
+                                "eojcc": eojcc,
+                                "instance": instance,
+                                "name": device_name,
+                                "capacity_kwh": device_config.get("capacity_kwh"),
+                            }
+                            logger.info(f"Stored battery device info for {device_name}")
+                    elif self.device_state_manager.is_device_discovered(ip):
+                        logger.error(
+                            f"❌ Required device not found: {device_name} (0x{eojgc:02X}{eojcc:02X}:{instance})"
+                        )
+                        missing_devices.append(device_name)
+                    else:
+                        logger.error(f"❌ No devices found at {ip} for {device_name}")
+                        missing_devices.append(device_name)
+
+                except Exception as e:
+                    error_msg = str(e) if str(e).strip() else "Device communication error"
+                    logger.error(f"❌ Error validating {device_name}: {error_msg}")
                     missing_devices.append(device_name)
-                else:
-                    logger.error(f"❌ No devices found at {ip} for {device_name}")
-                    missing_devices.append(device_name)
 
-            except Exception as e:
-                logger.error(f"❌ Error validating {device_name}: {e}")
-                missing_devices.append(device_name)
+            # If all devices validated successfully, break out of retry loop
+            if not missing_devices:
+                break
 
+        # Final check after all retry attempts
         if missing_devices:
-            error_msg = f"Required devices missing or not accessible: {', '.join(missing_devices)}"
+            error_msg = f"Required devices missing or not accessible after 3 attempts: {', '.join(missing_devices)}"
             logger.error(error_msg)
-            logger.error("Application cannot start without required devices")
+            logger.error(
+                "Application cannot start without required devices - check device connectivity"
+            )
             raise RuntimeError(error_msg)
 
         logger.info("✅ All required devices validated successfully")
@@ -391,22 +406,24 @@ class EcoliteManager:
         logger.info(
             f"Starting Tesla monitoring loop (retry every {tesla_retry_interval // 60} minutes or when EV decision changes)"
         )
-        
+
         # Skip initial poll - EV decision will trigger it immediately on startup
         while self._running:
             try:
                 # Wait for either timer or immediate trigger
                 try:
-                    await asyncio.wait_for(self._tesla_poll_trigger.wait(), timeout=tesla_retry_interval)
+                    await asyncio.wait_for(
+                        self._tesla_poll_trigger.wait(), timeout=tesla_retry_interval
+                    )
                     # Trigger was set - clear it and poll immediately
                     self._tesla_poll_trigger.clear()
                     logger.info("🚀 Tesla polling triggered by EV decision change")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Normal timeout - continue to next poll
                     logger.debug("Tesla polling: periodic check")
-                
+
                 await self._poll_tesla_data()
-                    
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -509,7 +526,14 @@ class EcoliteManager:
                 # Just use None - policies will handle missing data appropriately
                 grid_power_flow = None
 
+            # Update Wall Connector data (free local API)
+            await self._update_wall_connector_data()
+
+
             # Store latest home data for Tesla polling and EV control
+            # Preserve existing target_amps from previous cycle
+            existing_target_amps = self._latest_home_data.get("target_amps") if hasattr(self, '_latest_home_data') and self._latest_home_data else None
+            
             self._latest_home_data = {
                 "battery_soc": battery_soc,
                 "battery_power": battery_power,
@@ -519,6 +543,10 @@ class EcoliteManager:
                 "battery_data": battery_data,
                 "timestamp": current_time,
             }
+            
+            # Restore preserved target_amps
+            if existing_target_amps is not None:
+                self._latest_home_data["target_amps"] = existing_target_amps
 
             # Make EV charging decision based on fresh home data
             if self.ev_controller.is_enabled():
@@ -531,16 +559,17 @@ class EcoliteManager:
                 # Calculate EV controller decision and check for changes
                 prev_target_amps = self._latest_home_data.get("target_amps")
                 target_amps = self.ev_controller.calculate_charging_amps(metrics)
-                
+
                 # Always update stored decision first
                 self._latest_home_data["target_amps"] = target_amps
-                
+
                 # Only log and trigger Tesla if decision actually changed
-                logger.debug(f"Change check: {target_amps}A != {prev_target_amps}A = {target_amps != prev_target_amps}")
                 if target_amps != prev_target_amps:
                     policy_name = self.ev_controller.get_current_policy()
-                    logger.info(f"🚗 EV DECISION: {policy_name} policy → {target_amps}A (SOC:{battery_soc:.1f}%)")
-                    
+                    logger.info(
+                        f"🚗 EV DECISION: {policy_name} policy → {target_amps}A (SOC:{battery_soc:.1f}%)"
+                    )
+
                     # Trigger immediate Tesla polling when decision changes
                     self._tesla_poll_trigger.set()
 
@@ -582,6 +611,14 @@ class EcoliteManager:
             home_stats.append(f"Solar:{solar_power}W")
         else:
             home_stats.append("Solar:N/A")
+
+        # Wall Connector amps (real-time local API)
+        wall_connector_data = getattr(self, "_wall_connector_data", {})
+        wall_connector_amps = wall_connector_data.get("amps", 0)
+        if wall_connector_amps > 0:
+            home_stats.append(f"WC:{wall_connector_amps:.1f}A")
+        else:
+            home_stats.append("WC:0A")
 
         home_section = "Home [" + " ".join(home_stats) + "]"
         logger.info(f"📊 {home_section}")
@@ -645,7 +682,7 @@ class EcoliteManager:
             home_data = self._latest_home_data
             battery_soc = home_data.get("battery_soc")
             solar_power = home_data.get("solar_power")
-            
+
             # Get the EV controller's current decision (calculated in home polling loop)
             ev_amps = home_data.get("target_amps", 0)
             logger.debug(f"Tesla executing EV decision: {ev_amps}A")
@@ -701,6 +738,7 @@ class EcoliteManager:
 
             # Log Tesla metrics only if we have fresh data or wall connector data
             import time
+
             await self._maybe_log_tesla_metrics(time.time(), ev_amps)
 
         except Exception as e:
@@ -814,7 +852,7 @@ class EcoliteManager:
             tesla_stats.append("Charging:N/A")
 
         # Wall Connector actual current
-        if wall_connector_amps is not None and wall_connector_amps > 0:
+        if wall_connector_amps is not None:
             tesla_stats.append(f"WC:{wall_connector_amps:.1f}A")
         else:
             tesla_stats.append("WC:N/A")

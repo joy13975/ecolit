@@ -153,7 +153,8 @@ class SolarDevicePoller(DevicePollerBase):
                     logger.debug(f"📊 Total grid import: {import_total}Wh")
 
         except Exception as wrapper_error:
-            logger.error(f"Solar device wrapper failed: {wrapper_error}, trying raw API...")
+            error_msg = str(wrapper_error) or "Unknown error"
+            logger.error(f"Solar device wrapper failed: {error_msg}, trying raw API...")
 
             # Fallback to raw API
             try:

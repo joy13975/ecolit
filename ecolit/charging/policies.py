@@ -81,7 +81,7 @@ class EcoPolicy(ChargingPolicy):
     def calculate_target_amps(self, current_amps: int, metrics: EnergyMetrics) -> int:
         """Simple battery feedback control: When homeSOC ≥ target, respond to battery power flow."""
         # If battery SOC is below target, prioritize battery charging
-        if metrics.battery_soc < self.target_battery_soc:
+        if metrics.battery_soc is None or metrics.battery_soc < self.target_battery_soc:
             logger.debug(
                 f"ECO: Battery SOC {metrics.battery_soc:.1f}% < {self.target_battery_soc}%, stop EV charging"
             )
@@ -90,7 +90,7 @@ class EcoPolicy(ChargingPolicy):
         # CRITICAL: Above 99% SOC, immediately jump to max amps
         # This prevents battery from hitting 100% where it stops accepting charge
         # Battery feedback will naturally regulate down if we're drawing too much
-        if metrics.battery_soc >= 99.0:
+        if metrics.battery_soc is not None and metrics.battery_soc >= 99.0:
             target_amps = self.max_amps
             logger.debug(
                 f"ECO: Battery SOC {metrics.battery_soc:.1f}% ≥ 99%, max EV charging {target_amps}A - battery feedback will regulate"
@@ -198,7 +198,7 @@ class HurryPolicy(ChargingPolicy):
     ) -> int:
         """Simple battery feedback control for HURRY mode: Lower SOC target than ECO."""
         # If battery SOC is below target, prioritize battery charging
-        if metrics.battery_soc < self.target_battery_soc:
+        if metrics.battery_soc is None or metrics.battery_soc < self.target_battery_soc:
             logger.debug(
                 f"HURRY: Battery SOC {metrics.battery_soc:.1f}% < {self.target_battery_soc}%, no EV charging"
             )

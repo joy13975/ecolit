@@ -65,6 +65,14 @@ class RealtimeSoCEstimator:
             time_elapsed = (timestamp - self.official_soc_time).total_seconds() / 3600  # hours
             soc_change = soc_percent - self.official_soc
 
+            # Detect and reject physically impossible SOC readings
+            if abs(soc_change) > 5.0 and time_elapsed < 0.1:  # >5% change in <6 minutes
+                logger.warning(
+                    f"🚫 REJECTED bogus SoC reading: {self.official_soc:.1f}% → {soc_percent:.1f}% "
+                    f"({soc_change:+.1f}% in {time_elapsed:.1f}h) - physically impossible!"
+                )
+                return  # Reject this reading, keep previous value
+
             if abs(soc_change) >= 0.1:  # Only log significant changes
                 logger.info(
                     f"📊 Official Home Battery SoC: {self.official_soc:.1f}% → {soc_percent:.1f}% "
