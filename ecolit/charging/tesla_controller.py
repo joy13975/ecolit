@@ -12,10 +12,13 @@ logger = logging.getLogger(__name__)
 class TeslaChargingController:
     """Intelligent Tesla charging controller with solar surplus detection and wake-up."""
 
-    def __init__(self, tesla_client: TeslaAPIClient, config: dict[str, Any]):
+    def __init__(
+        self, tesla_client: TeslaAPIClient, config: dict[str, Any], wall_connector_client=None
+    ):
         """Initialize Tesla charging controller."""
         self.tesla_client = tesla_client
         self.config = config.get("tesla", {})
+        self.wall_connector_client = wall_connector_client
 
         # Rate limiting for commands
         self.last_wake_attempt = 0
@@ -203,7 +206,12 @@ class TeslaChargingController:
         solar_power: float = None,
         policy_name: str = None,
     ) -> dict[str, Any]:
-        """Execute charging control WITHOUT wake-up (for stopping charging)."""
+        """Execute charging control WITHOUT wake-up (for stopping charging).
+
+        Uses wall connector data to determine if wake-up is needed:
+        - If WC shows 0A, car is not charging → no wake needed
+        - If WC shows >0A, car IS charging (possibly while asleep) → wake to stop
+        """
         if not self.tesla_client.is_enabled():
             return {"success": False, "error": "Tesla API client not enabled"}
 
@@ -216,9 +224,46 @@ class TeslaChargingController:
         }
 
         try:
-            # For stopping charging, sync state first to verify if command is needed
+            # For stopping charging, check wall connector first to avoid unnecessary wake-ups
             if target_amps == 0:
-                # Get fresh state to verify if we actually need to stop
+                # Check wall connector amps to see if car is actually charging
+                wall_connector_amps = None
+                if self.wall_connector_client:
+                    try:
+                        vitals = await self.wall_connector_client.get_vitals()
+                        if vitals:
+                            wall_connector_amps = vitals.get("vehicle_current_a", 0)
+                            logger.debug(f"Wall connector check: {wall_connector_amps}A")
+                    except Exception as e:
+                        logger.debug(f"Could not get wall connector data: {e}")
+
+                # Decision logic based on wall connector data
+                if wall_connector_amps is not None and wall_connector_amps == 0:
+                    # Wall connector confirms car is not charging - no need to wake
+                    logger.info("📊 Wall connector shows 0A - car not charging, skip wake-up")
+                    result["success"] = True
+                    result["actions_taken"].append("Already not charging (WC shows 0A)")
+                    return result
+                elif wall_connector_amps is not None and wall_connector_amps > 0:
+                    # Wall connector shows active charging - MUST wake car to stop!
+                    logger.warning(
+                        f"⚠️ Wall connector shows {wall_connector_amps}A - car IS charging while asleep, waking to stop!"
+                    )
+
+                    # Use wake-up path to stop charging
+                    logger.info("🔔 Sending wake-up command to stop active charging...")
+                    wake_result = await self._handle_wake_up()
+                    if not wake_result["success"]:
+                        result["errors"].append(
+                            f"Failed to wake car to stop charging: {wake_result.get('error')}"
+                        )
+                        return result
+
+                    # Wait for car to wake up
+                    await self._sleep(15)  # Give car time to wake
+                    logger.info("⏳ Waiting for vehicle to wake up...")
+
+                # Now get fresh state (either no WC data, or after wake-up)
                 vehicle_data = await self.tesla_client.get_vehicle_data()
 
                 if vehicle_data and hasattr(vehicle_data, "charging_state"):

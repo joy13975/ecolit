@@ -697,11 +697,11 @@ class TeslaAPIClient:
         """Parse Tesla API error response into human-readable message."""
         if not result:
             return f"No response from Tesla API for {operation}"
-        
+
         # Extract the reason from Tesla's response
         response = result.get("response", {})
         reason = response.get("reason", "unknown")
-        
+
         # Map common Tesla error reasons to meaningful messages
         error_map = {
             "requested": "Command rejected by vehicle (may be due to Wall Connector schedule, vehicle in sleep mode, or charge limit reached)",
@@ -711,13 +711,13 @@ class TeslaAPIClient:
             "mobile_access_disabled": "Mobile access is disabled in vehicle settings",
             "user_cancelled": "Operation cancelled by user",
             "could_not_wake_buses": "Vehicle systems are not ready (try again in a few moments)",
-            "timeout": "Vehicle did not respond to command in time"
+            "timeout": "Vehicle did not respond to command in time",
         }
-        
+
         human_readable = error_map.get(reason, f"Unknown error: {reason}")
-        
+
         # For 'requested' errors, provide more context
         if reason == "requested":
             human_readable += " - Check Tesla app for charging schedule or limit settings"
-        
+
         return f"{human_readable} (Tesla reason: {reason})"

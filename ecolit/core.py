@@ -56,10 +56,13 @@ class EcoliteManager:
         self.wall_connector_client = None
         if tesla_config.get("enabled", False):
             self.tesla_client = TeslaAPIClient(tesla_config)
-            self.tesla_controller = TeslaChargingController(self.tesla_client, config)
             wall_connector_ip = tesla_config.get("wall_connector_ip")
             if wall_connector_ip:
                 self.wall_connector_client = WallConnectorClient(wall_connector_ip)
+            # Pass wall connector client to Tesla controller for smart wake-up logic
+            self.tesla_controller = TeslaChargingController(
+                self.tesla_client, config, self.wall_connector_client
+            )
 
         # Tesla state cache for display (synced every 10 minutes to reduce API calls)
         self._cached_tesla_state = {
@@ -687,11 +690,11 @@ class EcoliteManager:
             home_data = self._latest_home_data
             battery_soc = home_data.get("battery_soc")
             solar_power = home_data.get("solar_power")
+            # Initialize ev_amps for use later in metrics logging
+            ev_amps = home_data.get("target_amps", 0)
 
             # Only execute Tesla control commands when triggered by EV decision changes
             if triggered_by_decision:
-                # Get the EV controller's current decision (calculated in home polling loop)
-                ev_amps = home_data.get("target_amps", 0)
                 logger.debug(f"Tesla executing EV decision: {ev_amps}A")
 
                 if ev_amps > 0:

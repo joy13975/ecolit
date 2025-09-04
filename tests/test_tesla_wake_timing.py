@@ -1,10 +1,11 @@
 """Test Tesla wake-up timing and charger detection after wake-up."""
 
+from unittest.mock import AsyncMock
+
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, MagicMock
-from ecolit.charging.tesla_controller import TeslaChargingController
+
 from ecolit.charging.tesla_api import TeslaAPIClient
+from ecolit.charging.tesla_controller import TeslaChargingController
 
 
 class MockVehicleData:
@@ -54,7 +55,7 @@ async def test_wake_up_timing_with_slow_charger_detection():
 
     # Initialize controller
     config = {"tesla": {}}
-    controller = TeslaChargingController(mock_client, config)
+    controller = TeslaChargingController(mock_client, config, None)  # No wall connector
 
     # Mock sleep to speed up test
     controller._sleep = AsyncMock()
@@ -100,7 +101,7 @@ async def test_wake_up_timeout_when_charger_never_detected():
 
     # Initialize controller
     config = {"tesla": {}}
-    controller = TeslaChargingController(mock_client, config)
+    controller = TeslaChargingController(mock_client, config, None)  # No wall connector
 
     # Mock sleep to speed up test
     controller._sleep = AsyncMock()
@@ -143,7 +144,7 @@ async def test_no_retry_when_charger_detected_immediately():
 
     # Initialize controller
     config = {"tesla": {}}
-    controller = TeslaChargingController(mock_client, config)
+    controller = TeslaChargingController(mock_client, config, None)  # No wall connector
 
     # Mock sleep to speed up test
     controller._sleep = AsyncMock()
